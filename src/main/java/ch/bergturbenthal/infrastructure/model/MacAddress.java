@@ -5,7 +5,7 @@ import java.util.regex.Pattern;
 import lombok.Value;
 
 @Value
-public class MacAddress {
+public class MacAddress implements Comparable<MacAddress> {
     private static Pattern REMOVE_MATCHER = Pattern.compile("[^0-9a-f]");
 
     public static MacAddress parseAddress(final String address) {
@@ -18,6 +18,11 @@ public class MacAddress {
     }
 
     private long address;
+
+    @Override
+    public int compareTo(final MacAddress o) {
+        return Long.compare(address, o.address);
+    }
 
     @Override
     public String toString() {

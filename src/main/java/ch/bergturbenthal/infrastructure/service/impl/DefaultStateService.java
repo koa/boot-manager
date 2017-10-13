@@ -5,13 +5,17 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Optional;
 import java.util.Set;
 import java.util.SortedMap;
+import java.util.SortedSet;
 import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import javax.annotation.PreDestroy;
 import javax.transaction.Transactional;
@@ -69,14 +73,14 @@ public class DefaultStateService implements MachineService {
         private String patternData;
     }
 
-    private final Disposable                        logSubscription;
-    private final Object                            updateLock           = new Object();
-    private final Map<String, MachineData>          knownNamedMachines   = new HashMap<>();
-    private final Map<String, String>               availablePatterns    = new HashMap<>();
-    private final Map<UUID, Collection<MacAddress>> knownMachineUuidData = new HashMap<>();
-    private final Set<MacAddress>                   knownMacAddressList  = new HashSet<>();
-    private final Map<UUID, Runnable>               pendingListeners     = new HashMap<>();
-    private final LogService                        logService;
+    private final Disposable                                                         logSubscription;
+    private final Object                                                             updateLock           = new Object();
+    private final Map<String, MachineData>                                           knownNamedMachines   = new HashMap<>();
+    private final Map<String, String>                                                availablePatterns    = new HashMap<>();
+    private final Map<UUID, Collection<MacAddress>>                                  knownMachineUuidData = new HashMap<>();
+    private final Map<MacAddress, SortedMap<Instant, Optional<RequestHistoryEntry>>> knownMacAddressList  = new HashMap<>();
+    private final Map<UUID, Runnable>                                                pendingListeners     = new HashMap<>();
+    private final LogService                                                         logService;
 
     public DefaultStateService(final LogService logService) {
         this.logService = logService;
@@ -108,7 +112,7 @@ public class DefaultStateService implements MachineService {
                     final RenameMachineEvent renameMachineEvent = (RenameMachineEvent) event;
                     final String oldMachineName = renameMachineEvent.getOldMachineName();
                     final String newMachineName = renameMachineEvent.getNewMachineName();
-                    final MachineData machineData = knownNamedMachines.get(oldMachineName);
+                    final MachineData machineData = knownNamedMachines.remove(oldMachineName);
                     if (machineData != null) {
                         knownNamedMachines.put(newMachineName, machineData);
                     }
@@ -149,24 +153,32 @@ public class DefaultStateService implements MachineService {
                     final ServerRequestEvent serverRequestEvent = (ServerRequestEvent) event;
                     final MacAddress macAddress = serverRequestEvent.getMacAddress();
                     final Optional<UUID> machineUuid = serverRequestEvent.getMachineUuid();
-                    knownMacAddressList.add(macAddress);
                     if (machineUuid.isPresent()) {
                         knownMachineUuidData.computeIfAbsent(machineUuid.get(), k -> new HashSet<>()).add(macAddress);
                     }
-                    identifyMachine(machineUuid, macAddress).ifPresent(m -> {
-                        final Optional<UUID> currentPattern = findCurrentPattern(m);
-                        m.getRequestHistory().put(eventData.getTimestamp(), currentPattern.map(id -> {
-                            final String patternName = m.getAssignedPatterns().get(id).getPatternName();
+                    final Optional<MachineData> identifiedMachine = identifyMachine(machineUuid, macAddress);
+                    if (identifiedMachine.isPresent()) {
+                        final MachineData machine = identifiedMachine.get();
+                        final Optional<UUID> currentPattern = findCurrentPattern(machine);
+                        knownMacAddressList.computeIfAbsent(macAddress, k -> new TreeMap<>()).put(eventData.getTimestamp(), currentPattern.map(id -> {
+                            final String patternName = machine.getAssignedPatterns().get(id).getPatternName();
+                            final String patternData = availablePatterns.get(patternName);
+                            return new RequestHistoryEntry(id, patternName, patternData);
+                        }));
+                        machine.getRequestHistory().put(eventData.getTimestamp(), currentPattern.map(id -> {
+                            final String patternName = machine.getAssignedPatterns().get(id).getPatternName();
                             final String patternData = availablePatterns.get(patternName);
                             return new RequestHistoryEntry(id, patternName, patternData);
                         }));
                         currentPattern.ifPresent(id -> {
-                            final PatternEntry patternEntry = m.getAssignedPatterns().get(id);
+                            final PatternEntry patternEntry = machine.getAssignedPatterns().get(id);
                             if (patternEntry != null && patternEntry.getScope() instanceof OnebootPatternScope) {
-                                m.getAssignedPatterns().remove(id);
+                                machine.getAssignedPatterns().remove(id);
                             }
                         });
-                    });
+                    } else {
+                        knownMacAddressList.computeIfAbsent(macAddress, k -> new TreeMap<>()).put(eventData.getTimestamp(), Optional.empty());
+                    }
                 } else if (event instanceof SetMachineUuidEvent) {
                     final String machineName = ((SetMachineUuidEvent) event).getMachineName();
                     final UUID machineUuid = ((SetMachineUuidEvent) event).getMachineUuid();
@@ -230,11 +242,35 @@ public class DefaultStateService implements MachineService {
     @Override
     public Set<MacAddress> listFreeMacs() {
         synchronized (updateLock) {
-            final HashSet<MacAddress> ret = new HashSet<>(knownMacAddressList);
+            final HashSet<MacAddress> ret = new HashSet<>(knownMacAddressList.keySet());
             for (final MachineData machine : knownNamedMachines.values()) {
                 ret.removeAll(machine.getKnownMacAddresses());
             }
             return ret;
+        }
+    }
+
+    @Override
+    public List<ServerData> listServers() {
+        synchronized (updateLock) {
+            return knownNamedMachines.entrySet().stream().map(machineEntry -> {
+                final ServerData.ServerDataBuilder builder = ServerData.builder().name(machineEntry.getKey());
+                final MachineData machineData = machineEntry.getValue();
+                machineData.getMachineId().ifPresent(id -> builder.uuid(id));
+                final Collection<MacAddress> knownMacAddresses = machineData.getKnownMacAddresses();
+                builder.macs(new TreeSet<>(knownMacAddresses));
+                final SortedSet<Instant> bootTimes = new TreeSet<>();
+                for (final MacAddress macAddress : knownMacAddresses) {
+                    final SortedMap<Instant, Optional<RequestHistoryEntry>> macHistory = knownMacAddressList.get(macAddress);
+                    if (macHistory != null) {
+                        bootTimes.addAll(macHistory.keySet());
+                    }
+                }
+                if (!bootTimes.isEmpty()) {
+                    builder.lastBootTime(bootTimes.last());
+                }
+                return builder.build();
+            }).collect(Collectors.toList());
         }
     }
 

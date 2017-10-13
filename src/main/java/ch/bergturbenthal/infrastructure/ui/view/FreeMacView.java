@@ -16,7 +16,7 @@ import ch.bergturbenthal.infrastructure.model.MacAddress;
 import ch.bergturbenthal.infrastructure.service.MachineService;
 import reactor.core.Disposable;
 
-@SpringView(name = "")
+@SpringView
 public class FreeMacView extends VerticalLayout implements View {
 
     public FreeMacView(final MachineService machineService) {
