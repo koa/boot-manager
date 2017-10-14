@@ -10,7 +10,6 @@ import java.util.UUID;
 import ch.bergturbenthal.infrastructure.model.MacAddress;
 import lombok.Builder;
 import lombok.Value;
-import reactor.core.Disposable;
 
 public interface MachineService {
     @Value
@@ -27,7 +26,5 @@ public interface MachineService {
     List<ServerData> listServers();
 
     public Optional<String> processBoot(Optional<UUID> uuid, MacAddress macAddress);
-
-    Disposable registerForUpdates(Runnable run);
 
 }

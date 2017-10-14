@@ -15,6 +15,7 @@ import com.vaadin.ui.ListSelect;
 
 import ch.bergturbenthal.infrastructure.model.MacAddress;
 import ch.bergturbenthal.infrastructure.service.MachineService;
+import ch.bergturbenthal.infrastructure.service.StateService;
 import reactor.core.Disposable;
 
 public class FreeMacSelector extends CustomComponent {
@@ -22,7 +23,7 @@ public class FreeMacSelector extends CustomComponent {
     private final Supplier<Set<MacAddress>> macAddressReader;
     private final Consumer<Set<MacAddress>> macAddressWriter;
 
-    public FreeMacSelector(final String caption, final MachineService machineService) {
+    public FreeMacSelector(final String caption, final MachineService machineService, final StateService stateService) {
         setCaption(caption);
         final ListSelect<MacAddress> listSelect = new ListSelect<>();
 
@@ -39,7 +40,7 @@ public class FreeMacSelector extends CustomComponent {
             listSelect.setValue(selection);
             dataProvider.refreshAll();
         };
-        final Disposable registration = machineService.registerForUpdates(() -> getUI().access(updateListener));
+        final Disposable registration = stateService.registerForUpdates(() -> getUI().access(updateListener));
         addDetachListener(event -> registration.dispose());
         addAttachListener(event -> updateListener.run());
         macAddressReader = () -> listSelect.getValue();

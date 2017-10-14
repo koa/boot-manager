@@ -17,7 +17,8 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
         @JsonSubTypes.Type(value = SetMachineUuidEvent.class),
         @JsonSubTypes.Type(value = UpdateMachinePatternEvent.class),
         @JsonSubTypes.Type(value = UpdatePatternEvent.class),
-        @JsonSubTypes.Type(value = RemoveMachinePatternEvent.class) })
+        @JsonSubTypes.Type(value = RemoveMachinePatternEvent.class),
+        @JsonSubTypes.Type(value = SetDefaultBootConfigurationEvent.class) })
 public interface Event {
 
 }

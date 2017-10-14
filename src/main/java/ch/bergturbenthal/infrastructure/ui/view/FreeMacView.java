@@ -14,12 +14,13 @@ import com.vaadin.ui.VerticalLayout;
 
 import ch.bergturbenthal.infrastructure.model.MacAddress;
 import ch.bergturbenthal.infrastructure.service.MachineService;
+import ch.bergturbenthal.infrastructure.service.StateService;
 import reactor.core.Disposable;
 
 @SpringView
 public class FreeMacView extends VerticalLayout implements View {
 
-    public FreeMacView(final MachineService machineService) {
+    public FreeMacView(final MachineService machineService, final StateService stateService) {
 
         final ListSelect<MacAddress> listSelect = new ListSelect<>("available macs");
         listSelect.setItemCaptionGenerator(item -> item.toString());
@@ -31,7 +32,7 @@ public class FreeMacView extends VerticalLayout implements View {
             items.addAll(machineService.listFreeMacs());
             dataProvider.refreshAll();
         });
-        final Disposable registration = machineService.registerForUpdates(updateListener);
+        final Disposable registration = stateService.registerForUpdates(updateListener);
         addComponent(listSelect);
         addDetachListener(event -> registration.dispose());
         addAttachListener(event -> updateListener.run());

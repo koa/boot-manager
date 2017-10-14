@@ -23,6 +23,6 @@ public class BootController {
         final Optional<UUID> cleanUuid = hostUuid
                 .flatMap(id -> id.getLeastSignificantBits() == 0 && id.getMostSignificantBits() == 0 ? Optional.empty() : Optional.of(id));
 
-        return machineService.processBoot(cleanUuid, parsedMac).orElse("sanboot --no-describe --drive 0x80");
+        return machineService.processBoot(cleanUuid, parsedMac).orElse("#!ipxe\nsanboot --no-describe --drive 0x80");
     }
 }

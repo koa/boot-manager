@@ -1,9 +1,11 @@
 package ch.bergturbenthal.infrastructure.ui.view;
 
+import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.time.format.FormatStyle;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -18,6 +20,7 @@ import com.vaadin.ui.Button;
 import com.vaadin.ui.CustomComponent;
 import com.vaadin.ui.FormLayout;
 import com.vaadin.ui.Grid;
+import com.vaadin.ui.Grid.Column;
 import com.vaadin.ui.HorizontalLayout;
 import com.vaadin.ui.TextField;
 import com.vaadin.ui.VerticalLayout;
@@ -31,34 +34,38 @@ import ch.bergturbenthal.infrastructure.model.MacAddress;
 import ch.bergturbenthal.infrastructure.service.LogService;
 import ch.bergturbenthal.infrastructure.service.MachineService;
 import ch.bergturbenthal.infrastructure.service.MachineService.ServerData;
+import ch.bergturbenthal.infrastructure.service.StateService;
 import ch.bergturbenthal.infrastructure.ui.component.FreeMacSelector;
+import reactor.core.Disposable;
 
 @SpringView(name = "")
 public class ServerOverview extends CustomComponent implements View {
-    private static interface ServerEntry {
-
-    }
-
-    public ServerOverview(final MachineService machineService, final LogService logService) {
+    public ServerOverview(final MachineService machineService, final StateService stateService, final LogService logService) {
         final List<ServerData> servers = new ArrayList<>();
         final ListDataProvider<ServerData> dataProvider = DataProvider.ofCollection(servers);
         final Grid<ServerData> serverGrid = new Grid<>("Servers", dataProvider);
 
         serverGrid.addColumn(ServerData::getName).setCaption("Name");
-        serverGrid.addColumn(d -> d.getMacs().stream().map(a -> a.toString()).collect(Collectors.joining(", "))).setCaption("Mac Addresses");
+        final Column<ServerData, String> macAddressColumn = serverGrid
+                .addColumn(d -> d.getMacs().stream().map(a -> a.toString()).collect(Collectors.joining(", ")));
+        macAddressColumn.setCaption("Mac Addresses");
+        macAddressColumn.setSortable(false);
 
         final AtomicReference<ZoneOffset> offset = new AtomicReference<ZoneOffset>(ZoneOffset.UTC);
         final AtomicReference<DateTimeFormatter> formatter = new AtomicReference<DateTimeFormatter>(
                 DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM));
-        serverGrid.addColumn(source -> source.getLastBootTime().atOffset(offset.get()).format(formatter.get())).setCaption("Last boot time");
-
+        final Column<ServerData, String> lastBootTimeColumn = serverGrid
+                .addColumn(source -> source.getLastBootTime().atOffset(offset.get()).format(formatter.get()));
+        lastBootTimeColumn.setCaption("Last boot time");
+        lastBootTimeColumn.setComparator(
+                (o1, o2) -> Comparator.<Instant> nullsFirst(Comparator.naturalOrder()).compare(o1.getLastBootTime(), o2.getLastBootTime()));
         final Button addServerButton = new Button("add Server");
 
         addServerButton.addClickListener(event -> {
             final Window window = new Window("create server");
             final FormLayout formLayout = new FormLayout();
             final TextField nameField = new TextField("name");
-            final FreeMacSelector macSelector = new FreeMacSelector("select mac", machineService);
+            final FreeMacSelector macSelector = new FreeMacSelector("select mac", machineService, stateService);
             formLayout.addComponent(nameField);
             formLayout.addComponent(macSelector);
             formLayout.addComponent(new Button("Add", ev -> {
@@ -95,7 +102,7 @@ public class ServerOverview extends CustomComponent implements View {
             final FormLayout formLayout = new FormLayout();
             final TextField nameField = new TextField("name");
             nameField.setValue(serverDataBeforeEdit.getName());
-            final FreeMacSelector macSelector = new FreeMacSelector("select mac", machineService);
+            final FreeMacSelector macSelector = new FreeMacSelector("select mac", machineService, stateService);
             final Set<MacAddress> macsBefore = new HashSet<>(serverDataBeforeEdit.getMacs());
             macSelector.setValue(macsBefore);
             formLayout.addComponent(nameField);
@@ -128,20 +135,26 @@ public class ServerOverview extends CustomComponent implements View {
             editServerButton.setEnabled(allSelectedItems.size() == 1);
         });
         serverGrid.setWidth(100, Unit.PERCENTAGE);
+        serverGrid.setHeight(100, Unit.PERCENTAGE);
+
         final VerticalLayout mainPanel = new VerticalLayout(serverGrid, new HorizontalLayout(addServerButton, removeServerButton, editServerButton));
+        mainPanel.setExpandRatio(serverGrid, 1);
+        mainPanel.setHeight(100, Unit.PERCENTAGE);
         setCompositionRoot(mainPanel);
+        setHeight(100, Unit.PERCENTAGE);
         final Runnable refreshRunnable = () -> {
             final List<ServerData> currentServers = machineService.listServers();
             servers.clear();
             servers.addAll(currentServers);
             dataProvider.refreshAll();
         };
-        machineService.registerForUpdates(() -> getUI().access(refreshRunnable));
+        final Disposable registration = stateService.registerForUpdates(() -> getUI().access(refreshRunnable));
         addAttachListener(event -> {
             final int timezoneOffset = getUI().getPage().getWebBrowser().getTimezoneOffset();
             offset.set(ZoneOffset.ofTotalSeconds(timezoneOffset / 1000));
             formatter.set(DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM).withLocale(getLocale()));
             refreshRunnable.run();
         });
+        addDetachListener(event -> registration.dispose());
     }
 }

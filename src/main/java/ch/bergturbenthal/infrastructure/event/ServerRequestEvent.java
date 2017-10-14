@@ -13,4 +13,5 @@ public class ServerRequestEvent implements Event {
     private MacAddress       macAddress;
     private Optional<UUID>   machineUuid;
     private Optional<String> selectedPattern;
+    private Optional<String> selectedPatternContent;
 }

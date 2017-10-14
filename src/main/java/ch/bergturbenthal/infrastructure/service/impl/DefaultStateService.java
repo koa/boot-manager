@@ -35,12 +35,15 @@ import ch.bergturbenthal.infrastructure.event.RemovePatternEvent;
 import ch.bergturbenthal.infrastructure.event.RenameMachineEvent;
 import ch.bergturbenthal.infrastructure.event.RenamePatternEvent;
 import ch.bergturbenthal.infrastructure.event.ServerRequestEvent;
+import ch.bergturbenthal.infrastructure.event.SetDefaultBootConfigurationEvent;
 import ch.bergturbenthal.infrastructure.event.SetMachineUuidEvent;
 import ch.bergturbenthal.infrastructure.event.UpdateMachinePatternEvent;
 import ch.bergturbenthal.infrastructure.event.UpdatePatternEvent;
 import ch.bergturbenthal.infrastructure.model.MacAddress;
 import ch.bergturbenthal.infrastructure.service.LogService;
 import ch.bergturbenthal.infrastructure.service.MachineService;
+import ch.bergturbenthal.infrastructure.service.PatternService;
+import ch.bergturbenthal.infrastructure.service.StateService;
 import lombok.Builder;
 import lombok.Data;
 import lombok.Value;
@@ -48,7 +51,7 @@ import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
 
 @Service
-public class DefaultStateService implements MachineService {
+public class DefaultStateService implements MachineService, PatternService, StateService {
 
     @Data
     private static class MachineData {
@@ -74,12 +77,13 @@ public class DefaultStateService implements MachineService {
     }
 
     private final Disposable                                                         logSubscription;
-    private final Object                                                             updateLock           = new Object();
-    private final Map<String, MachineData>                                           knownNamedMachines   = new HashMap<>();
-    private final Map<String, String>                                                availablePatterns    = new HashMap<>();
-    private final Map<UUID, Collection<MacAddress>>                                  knownMachineUuidData = new HashMap<>();
-    private final Map<MacAddress, SortedMap<Instant, Optional<RequestHistoryEntry>>> knownMacAddressList  = new HashMap<>();
-    private final Map<UUID, Runnable>                                                pendingListeners     = new HashMap<>();
+    private final Object                                                             updateLock               = new Object();
+    private final Map<String, MachineData>                                           knownNamedMachines       = new HashMap<>();
+    private final Map<String, String>                                                availablePatterns        = new HashMap<>();
+    private final Map<UUID, Collection<MacAddress>>                                  knownMachineUuidData     = new HashMap<>();
+    private final Map<MacAddress, SortedMap<Instant, Optional<RequestHistoryEntry>>> knownMacAddressList      = new HashMap<>();
+    private final Map<UUID, Runnable>                                                pendingListeners         = new HashMap<>();
+    private Optional<String>                                                         defaultBootConfiguration = Optional.empty();
     private final LogService                                                         logService;
 
     public DefaultStateService(final LogService logService) {
@@ -127,6 +131,9 @@ public class DefaultStateService implements MachineService {
                             }
                         }
                     }
+                    if (defaultBootConfiguration.isPresent() && defaultBootConfiguration.get().equals(patternName)) {
+                        defaultBootConfiguration = Optional.empty();
+                    }
                     availablePatterns.remove(patternName);
                 } else if (event instanceof RenamePatternEvent) {
                     final RenamePatternEvent renamePatternEvent = (RenamePatternEvent) event;
@@ -135,6 +142,9 @@ public class DefaultStateService implements MachineService {
                     final String patternContent = availablePatterns.remove(oldPatternName);
                     if (patternContent != null) {
                         availablePatterns.put(newPatternName, patternContent);
+                    }
+                    if (defaultBootConfiguration.isPresent() && defaultBootConfiguration.get().equals(oldPatternName)) {
+                        defaultBootConfiguration = Optional.of(newPatternName);
                     }
                     for (final MachineData machine : knownNamedMachines.values()) {
                         for (final Entry<UUID, PatternEntry> patternEntry : machine.getAssignedPatterns().entrySet()) {
@@ -204,6 +214,11 @@ public class DefaultStateService implements MachineService {
                     final String patternName = ((UpdatePatternEvent) event).getPatternName();
                     final String patternContent = ((UpdatePatternEvent) event).getPatternContent();
                     availablePatterns.put(patternName, patternContent);
+                } else if (event instanceof SetDefaultBootConfigurationEvent) {
+                    final String configurationName = ((SetDefaultBootConfigurationEvent) event).getConfigurationName();
+                    if (availablePatterns.containsKey(configurationName)) {
+                        defaultBootConfiguration = Optional.of(configurationName);
+                    }
                 }
             }
             synchronized (pendingListeners) {
@@ -251,6 +266,13 @@ public class DefaultStateService implements MachineService {
     }
 
     @Override
+    public Map<String, String> listPatterns() {
+        synchronized (updateLock) {
+            return new HashMap<>(availablePatterns);
+        }
+    }
+
+    @Override
     public List<ServerData> listServers() {
         synchronized (updateLock) {
             return knownNamedMachines.entrySet().stream().map(machineEntry -> {
@@ -278,16 +300,19 @@ public class DefaultStateService implements MachineService {
     @Transactional
     public Optional<String> processBoot(final Optional<UUID> uuid, final MacAddress macAddress) {
         synchronized (updateLock) {
-            final Optional<MachineData> machine = identifyMachine(uuid, macAddress);
-            if (machine.isPresent()) {
-                final MachineData machineData = machine.get();
+            final Optional<String> foundPattern = identifyMachine(uuid, macAddress).flatMap(machineData -> {
                 final Optional<UUID> currentPattern = findCurrentPattern(machineData);
-                final Optional<String> patternName = currentPattern.map(k -> machineData.getAssignedPatterns().get(k).getPatternName());
-                logService.appendEvent(new ServerRequestEvent(macAddress, uuid, patternName));
-                return patternName.flatMap(p -> Optional.ofNullable(availablePatterns.get(p)));
+                return currentPattern.map(k -> machineData.getAssignedPatterns().get(k).getPatternName());
+            });
+            final Optional<String> selectedPattern;
+            if (foundPattern.isPresent()) {
+                selectedPattern = foundPattern;
+            } else {
+                selectedPattern = defaultBootConfiguration;
             }
-            logService.appendEvent(new ServerRequestEvent(macAddress, uuid, Optional.empty()));
-            return Optional.empty();
+            final Optional<String> patternContent = selectedPattern.flatMap(p -> Optional.ofNullable(availablePatterns.get(p)));
+            logService.appendEvent(new ServerRequestEvent(macAddress, uuid, selectedPattern, patternContent));
+            return patternContent;
         }
     }
 
