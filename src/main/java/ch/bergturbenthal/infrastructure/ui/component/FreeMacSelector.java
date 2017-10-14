@@ -28,6 +28,7 @@ public class FreeMacSelector extends CustomComponent {
         final ListSelect<MacAddress> listSelect = new ListSelect<>();
 
         listSelect.setItemCaptionGenerator(item -> item.toString());
+        listSelect.setRows(0);
         final Collection<MacAddress> items = new TreeSet<>(Comparator.comparing(a -> a.getAddress()));
         final ListDataProvider<MacAddress> dataProvider = DataProvider.ofCollection(items);
         listSelect.setDataProvider(dataProvider);
@@ -39,6 +40,11 @@ public class FreeMacSelector extends CustomComponent {
             items.addAll(machineService.listFreeMacs());
             listSelect.setValue(selection);
             dataProvider.refreshAll();
+            if (items.size() < 8) {
+                listSelect.setRows(items.size());
+            } else {
+                listSelect.setRows(8);
+            }
         };
         final Disposable registration = stateService.registerForUpdates(() -> getUI().access(updateListener));
         addDetachListener(event -> registration.dispose());

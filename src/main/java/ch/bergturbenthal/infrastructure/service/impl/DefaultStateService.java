@@ -1,6 +1,7 @@
 package ch.bergturbenthal.infrastructure.service.impl;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -238,8 +239,6 @@ public class DefaultStateService implements MachineService, PatternService, Stat
                 return Optional.of(entry.getKey());
             } else if (scope instanceof DefaultPatternScope) {
                 defaultEntry = Optional.of(entry.getKey());
-            } else {
-                throw new IllegalStateException("unsupported scope " + scope);
             }
         }
         return defaultEntry;
@@ -279,6 +278,12 @@ public class DefaultStateService implements MachineService, PatternService, Stat
                 final ServerData.ServerDataBuilder builder = ServerData.builder().name(machineEntry.getKey());
                 final MachineData machineData = machineEntry.getValue();
                 machineData.getMachineId().ifPresent(id -> builder.uuid(id));
+                final List<BootConfigurationEntry> bootConfiguration = new ArrayList<>();
+                for (final Entry<UUID, PatternEntry> patternEntry : machineData.getAssignedPatterns().entrySet()) {
+                    final PatternEntry value = patternEntry.getValue();
+                    bootConfiguration.add(new BootConfigurationEntry(patternEntry.getKey(), value.getScope(), value.getPatternName()));
+                }
+                builder.bootConfiguration(bootConfiguration);
                 final Collection<MacAddress> knownMacAddresses = machineData.getKnownMacAddresses();
                 builder.macs(new TreeSet<>(knownMacAddresses));
                 final SortedSet<Instant> bootTimes = new TreeSet<>();
@@ -288,8 +293,9 @@ public class DefaultStateService implements MachineService, PatternService, Stat
                         bootTimes.addAll(macHistory.keySet());
                     }
                 }
+                builder.lastBootTime(Optional.empty());
                 if (!bootTimes.isEmpty()) {
-                    builder.lastBootTime(bootTimes.last());
+                    builder.lastBootTime(Optional.of(bootTimes.last()));
                 }
                 return builder.build();
             }).collect(Collectors.toList());

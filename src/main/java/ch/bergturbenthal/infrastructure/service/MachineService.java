@@ -7,18 +7,27 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
+import ch.bergturbenthal.infrastructure.event.PatternScope;
 import ch.bergturbenthal.infrastructure.model.MacAddress;
 import lombok.Builder;
 import lombok.Value;
 
 public interface MachineService {
     @Value
+    static class BootConfigurationEntry {
+        private UUID         uuid;
+        private PatternScope scope;
+        private String       configuration;
+    }
+
+    @Value
     @Builder
     static class ServerData {
-        private String                 name;
-        private UUID                   uuid;
-        private Collection<MacAddress> macs;
-        private Instant                lastBootTime;
+        private String                       name;
+        private UUID                         uuid;
+        private Collection<MacAddress>       macs;
+        private Optional<Instant>            lastBootTime;
+        private List<BootConfigurationEntry> bootConfiguration;
     }
 
     Set<MacAddress> listFreeMacs();
