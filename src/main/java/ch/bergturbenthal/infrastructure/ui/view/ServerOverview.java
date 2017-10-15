@@ -6,6 +6,7 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.FormatStyle;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -22,6 +23,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import com.vaadin.data.provider.DataProvider;
+import com.vaadin.data.provider.GridSortOrderBuilder;
 import com.vaadin.data.provider.ListDataProvider;
 import com.vaadin.navigator.View;
 import com.vaadin.spring.annotation.SpringView;
@@ -43,7 +45,9 @@ import ch.bergturbenthal.infrastructure.event.PatternScope;
 import ch.bergturbenthal.infrastructure.event.RemoveMacAddressFromMachineEvent;
 import ch.bergturbenthal.infrastructure.event.RemoveMachineEvent;
 import ch.bergturbenthal.infrastructure.event.RemoveMachinePatternEvent;
+import ch.bergturbenthal.infrastructure.event.RemoveMachineUUIDEvent;
 import ch.bergturbenthal.infrastructure.event.RenameMachineEvent;
+import ch.bergturbenthal.infrastructure.event.SetMachineUuidEvent;
 import ch.bergturbenthal.infrastructure.event.UpdateMachinePatternEvent;
 import ch.bergturbenthal.infrastructure.model.MacAddress;
 import ch.bergturbenthal.infrastructure.service.LogService;
@@ -52,6 +56,7 @@ import ch.bergturbenthal.infrastructure.service.MachineService.ServerData;
 import ch.bergturbenthal.infrastructure.service.PatternService;
 import ch.bergturbenthal.infrastructure.service.StateService;
 import ch.bergturbenthal.infrastructure.ui.component.FreeMacSelector;
+import ch.bergturbenthal.infrastructure.ui.component.FreeUUIDSelector;
 import lombok.Builder;
 import lombok.Value;
 import reactor.core.Disposable;
@@ -86,17 +91,30 @@ public class ServerOverview extends CustomComponent implements View {
         lastBootTimeColumn.setCaption("Last boot time");
         lastBootTimeColumn.setComparator((o1, o2) -> Comparator.<Instant> nullsFirst(Comparator.naturalOrder())
                 .compare(o1.getLastBootTime().orElse(null), o2.getLastBootTime().orElse(null)));
+
+        final Column<ServerData, String> nextConfigurationColumn = serverGrid
+                .addColumn(s -> machineService.evaluateNextBootConfiguration(s.getName()).orElse("<default>"));
+        nextConfigurationColumn.setCaption("next boot configuration");
+        nextConfigurationColumn.setSortable(false);
+
+        serverGrid.setSortOrder(new GridSortOrderBuilder<ServerData>().thenDesc(lastBootTimeColumn).build());
         final Button addServerButton = new Button("add Server");
 
         addServerButton.addClickListener(event -> {
             final Window window = new Window("create server");
             final FormLayout formLayout = new FormLayout();
             final TextField nameField = new TextField("name");
-            final FreeMacSelector macSelector = new FreeMacSelector("select mac", machineService, stateService);
+            final FreeUUIDSelector uuidSelector = createUUIDSelector(machineService, stateService, Optional.empty());
+            final FreeMacSelector macSelector = createMacSelector(machineService, stateService, Collections.emptySet());
             formLayout.addComponent(nameField);
+            formLayout.addComponent(uuidSelector);
             formLayout.addComponent(macSelector);
             formLayout.addComponent(new Button("Add", ev -> {
                 final String name = nameField.getValue();
+                final UUID selectedUUID = uuidSelector.getValue();
+                if (selectedUUID != null) {
+                    logService.appendEvent(new SetMachineUuidEvent(name, selectedUUID));
+                }
                 final Set<MacAddress> macs = macSelector.getValue();
                 for (final MacAddress macAddress : macs) {
                     logService.appendEvent(new AssignMacAddressToMachineEvent(name, macAddress));
@@ -125,15 +143,25 @@ public class ServerOverview extends CustomComponent implements View {
                 return;
             }
             final ServerData serverDataBeforeEdit = selectedItems.iterator().next();
+            final UUID uuidBefore = serverDataBeforeEdit.getUuid();
+
             final Window window = new Window("edit server");
             final FormLayout formLayout = new FormLayout();
             final TextField nameField = new TextField("name");
             nameField.setValue(serverDataBeforeEdit.getName());
-            final FreeMacSelector macSelector = new FreeMacSelector("select mac", machineService, stateService);
-            final Set<MacAddress> macsBefore = new HashSet<>(serverDataBeforeEdit.getMacs());
-            macSelector.setValue(macsBefore);
             formLayout.addComponent(nameField);
+
+            final FreeUUIDSelector uuidSelector = createUUIDSelector(machineService, stateService, Optional.ofNullable(uuidBefore));
+            formLayout.addComponent(uuidSelector);
+
+            final Set<MacAddress> macsBefore = new HashSet<>(serverDataBeforeEdit.getMacs());
+            if (uuidBefore != null) {
+                macsBefore.removeAll(machineService.macsOfUUID(uuidBefore));
+            }
+
+            final FreeMacSelector macSelector = createMacSelector(machineService, stateService, macsBefore);
             formLayout.addComponent(macSelector);
+
             final Map<UUID, EditBootConfigurationEntry> bootConfigurationBeforeEdit = serverDataBeforeEdit.getBootConfiguration().stream()
                     .collect(Collectors.toMap(e -> e.getUuid(),
                             e -> EditBootConfigurationEntry.builder().scope(e.getScope()).patternName(e.getConfiguration()).build()));
@@ -171,6 +199,17 @@ public class ServerOverview extends CustomComponent implements View {
                 }
                 for (final MacAddress macAddress : macsBefore) {
                     logService.appendEvent(new RemoveMacAddressFromMachineEvent(nameBefore, macAddress));
+                }
+                final UUID uuidAfter = uuidSelector.getValue();
+                if (uuidAfter == null) {
+                    if (uuidBefore != null) {
+                        logService.appendEvent(new RemoveMachineUUIDEvent(nameBefore));
+                    }
+                } else {
+                    if (!uuidAfter.equals(uuidBefore)) {
+                        logService.appendEvent(new SetMachineUuidEvent(nameBefore, uuidAfter));
+                    }
+
                 }
                 for (final Entry<UUID, EditBootConfigurationEntry> currentEntry : currentBootConfiguration.entrySet()) {
                     final UUID id = currentEntry.getKey();
@@ -232,5 +271,22 @@ public class ServerOverview extends CustomComponent implements View {
             refreshRunnable.run();
         });
         addDetachListener(event -> registration.dispose());
+    }
+
+    private FreeMacSelector createMacSelector(final MachineService machineService, final StateService stateService,
+            final Set<MacAddress> macsBefore) {
+        final FreeMacSelector macSelector = new FreeMacSelector("select mac", machineService, stateService);
+        macSelector.setValue(macsBefore);
+        macSelector.setWidth(100, Unit.PERCENTAGE);
+        return macSelector;
+    }
+
+    private FreeUUIDSelector createUUIDSelector(final MachineService machineService, final StateService stateService,
+            final Optional<UUID> uuidBefore) {
+        final FreeUUIDSelector uuidSelector = new FreeUUIDSelector(stateService, machineService);
+        uuidSelector.setCaption("UUID");
+        uuidBefore.ifPresent(id -> uuidSelector.setValue(id));
+        uuidSelector.setWidth(100, Unit.PERCENTAGE);
+        return uuidSelector;
     }
 }

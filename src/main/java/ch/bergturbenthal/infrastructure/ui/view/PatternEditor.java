@@ -19,6 +19,7 @@ import com.vaadin.ui.TextArea;
 import com.vaadin.ui.VerticalLayout;
 import com.vaadin.ui.Window;
 
+import ch.bergturbenthal.infrastructure.event.RemovePatternEvent;
 import ch.bergturbenthal.infrastructure.event.UpdatePatternEvent;
 import ch.bergturbenthal.infrastructure.service.LogService;
 import ch.bergturbenthal.infrastructure.service.PatternService;
@@ -71,6 +72,9 @@ public class PatternEditor extends CustomComponent implements View {
         final Button saveButton = new Button("update", event -> {
             logService.appendEvent(new UpdatePatternEvent(comboBox.getValue(), contentArea.getValue()));
         });
+        final Button deleteButton = new Button("delete", event -> {
+            logService.appendEvent(new RemovePatternEvent(comboBox.getValue()));
+        });
         final Set<String> patternList = new TreeSet<>();
         final ListDataProvider<String> dataProvider = DataProvider.ofCollection(patternList);
         comboBox.setDataProvider(dataProvider);
@@ -89,7 +93,7 @@ public class PatternEditor extends CustomComponent implements View {
             }
             patternList.addAll(patterns.keySet());
             dataProvider.refreshAll();
-            if (currentSelection != null) {
+            if (currentSelection != null && patternList.contains(currentSelection)) {
                 comboBox.setValue(currentSelection);
                 final String storedText = patterns.get(currentSelection);
                 if (storedText != null && !storedText.equals(originalContent.get())) {
@@ -99,7 +103,7 @@ public class PatternEditor extends CustomComponent implements View {
 
         };
         contentArea.setSizeFull();
-        final VerticalLayout mainLayout = new VerticalLayout(comboBox, contentArea, new HorizontalLayout(saveButton));
+        final VerticalLayout mainLayout = new VerticalLayout(comboBox, contentArea, new HorizontalLayout(saveButton, deleteButton));
         mainLayout.setExpandRatio(contentArea, 1);
         mainLayout.setSizeFull();
         setCompositionRoot(mainLayout);

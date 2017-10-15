@@ -56,7 +56,7 @@ public class FreeMacSelector extends CustomComponent {
             listSelect.setValue(value);
             updateListener.run();
         };
-
+        listSelect.setSizeFull();
         setCompositionRoot(listSelect);
     }
 

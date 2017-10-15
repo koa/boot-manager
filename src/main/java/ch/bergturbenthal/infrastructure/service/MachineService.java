@@ -3,6 +3,7 @@ package ch.bergturbenthal.infrastructure.service;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -30,10 +31,16 @@ public interface MachineService {
         private List<BootConfigurationEntry> bootConfiguration;
     }
 
+    Optional<String> evaluateNextBootConfiguration(String machineName);
+
     Set<MacAddress> listFreeMacs();
+
+    Map<UUID, Collection<MacAddress>> listFreeUUIDs();
 
     List<ServerData> listServers();
 
-    public Optional<String> processBoot(Optional<UUID> uuid, MacAddress macAddress);
+    Collection<MacAddress> macsOfUUID(UUID uuid);
+
+    Optional<String> processBoot(Optional<UUID> uuid, MacAddress macAddress);
 
 }

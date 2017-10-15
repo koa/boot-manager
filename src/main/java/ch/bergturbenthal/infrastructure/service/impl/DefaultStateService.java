@@ -3,6 +3,7 @@ package ch.bergturbenthal.infrastructure.service.impl;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -230,6 +231,15 @@ public class DefaultStateService implements MachineService, PatternService, Stat
         });
     }
 
+    @Override
+    public Optional<String> evaluateNextBootConfiguration(final String machineName) {
+        synchronized (updateLock) {
+            return Optional.ofNullable(knownNamedMachines.get(machineName))
+                    .flatMap(m -> findCurrentPattern(m).flatMap(id -> Optional.ofNullable(m.getAssignedPatterns().get(id))))
+                    .map(e -> e.getPatternName());
+        }
+    }
+
     private Optional<UUID> findCurrentPattern(final MachineData m) {
         final Map<UUID, PatternEntry> assignedPatterns = m.getAssignedPatterns();
         Optional<UUID> defaultEntry = Optional.empty();
@@ -259,6 +269,19 @@ public class DefaultStateService implements MachineService, PatternService, Stat
             final HashSet<MacAddress> ret = new HashSet<>(knownMacAddressList.keySet());
             for (final MachineData machine : knownNamedMachines.values()) {
                 ret.removeAll(machine.getKnownMacAddresses());
+            }
+            knownMachineUuidData.values().stream().forEach(c -> ret.removeAll(c));
+            return ret;
+        }
+    }
+
+    @Override
+    public Map<UUID, Collection<MacAddress>> listFreeUUIDs() {
+        synchronized (updateLock) {
+            final Map<UUID, Collection<MacAddress>> ret = knownMachineUuidData.entrySet().stream()
+                    .collect(Collectors.toMap(e -> e.getKey(), e -> new ArrayList<>(e.getValue())));
+            for (final MachineData machine : knownNamedMachines.values()) {
+                machine.getMachineId().ifPresent(id -> ret.remove(id));
             }
             return ret;
         }
@@ -299,6 +322,18 @@ public class DefaultStateService implements MachineService, PatternService, Stat
                 }
                 return builder.build();
             }).collect(Collectors.toList());
+        }
+    }
+
+    @Override
+    public Collection<MacAddress> macsOfUUID(final UUID uuid) {
+        synchronized (updateLock) {
+            final Collection<MacAddress> addr = knownMachineUuidData.get(uuid);
+            if (addr == null) {
+                return Collections.emptyList();
+            } else {
+                return new ArrayList<>(addr);
+            }
         }
     }
 
