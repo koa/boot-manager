@@ -37,6 +37,7 @@ import com.vaadin.ui.HorizontalLayout;
 import com.vaadin.ui.TextField;
 import com.vaadin.ui.VerticalLayout;
 import com.vaadin.ui.Window;
+import com.vaadin.ui.components.grid.Editor;
 
 import ch.bergturbenthal.infrastructure.event.AssignMacAddressToMachineEvent;
 import ch.bergturbenthal.infrastructure.event.DefaultPatternScope;
@@ -188,7 +189,9 @@ public class ServerOverview extends CustomComponent implements View {
             configurationColumn.setEditable(true);
             configurationColumn.setCaption("Pattern");
 
-            bootConfigurationGrid.getEditor().setEnabled(true);
+            final Editor<UUID> editor = bootConfigurationGrid.getEditor();
+            editor.setEnabled(true);
+            editor.setBuffered(false);
             formLayout.addComponent(bootConfigurationGrid);
             final Button saveButton = new Button("save", ev -> {
                 final String nameBefore = serverDataBeforeEdit.getName();
@@ -249,8 +252,7 @@ public class ServerOverview extends CustomComponent implements View {
             removeServerButton.setEnabled(!allSelectedItems.isEmpty());
             editServerButton.setEnabled(allSelectedItems.size() == 1);
         });
-        serverGrid.setWidth(100, Unit.PERCENTAGE);
-        serverGrid.setHeight(100, Unit.PERCENTAGE);
+        serverGrid.setSizeFull();
 
         final VerticalLayout mainPanel = new VerticalLayout(serverGrid, new HorizontalLayout(addServerButton, removeServerButton, editServerButton));
         mainPanel.setExpandRatio(serverGrid, 1);

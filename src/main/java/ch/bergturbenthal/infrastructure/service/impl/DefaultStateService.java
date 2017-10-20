@@ -4,9 +4,11 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -42,6 +44,7 @@ import ch.bergturbenthal.infrastructure.event.SetMachineUuidEvent;
 import ch.bergturbenthal.infrastructure.event.UpdateMachinePatternEvent;
 import ch.bergturbenthal.infrastructure.event.UpdatePatternEvent;
 import ch.bergturbenthal.infrastructure.model.MacAddress;
+import ch.bergturbenthal.infrastructure.service.BootLogService;
 import ch.bergturbenthal.infrastructure.service.LogService;
 import ch.bergturbenthal.infrastructure.service.MachineService;
 import ch.bergturbenthal.infrastructure.service.PatternService;
@@ -53,7 +56,7 @@ import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
 
 @Service
-public class DefaultStateService implements MachineService, PatternService, StateService {
+public class DefaultStateService implements MachineService, PatternService, StateService, BootLogService {
 
     @Data
     private static class MachineData {
@@ -85,6 +88,7 @@ public class DefaultStateService implements MachineService, PatternService, Stat
     private final Map<UUID, Collection<MacAddress>>                                  knownMachineUuidData     = new HashMap<>();
     private final Map<MacAddress, SortedMap<Instant, Optional<RequestHistoryEntry>>> knownMacAddressList      = new HashMap<>();
     private final Map<UUID, Runnable>                                                pendingListeners         = new HashMap<>();
+    private final Deque<BootLogEntry>                                                lastEntries              = new LinkedList<>();
     private Optional<String>                                                         defaultBootConfiguration = Optional.empty();
     private final LogService                                                         logService;
 
@@ -190,6 +194,11 @@ public class DefaultStateService implements MachineService, PatternService, Stat
                         });
                     } else {
                         knownMacAddressList.computeIfAbsent(macAddress, k -> new TreeMap<>()).put(eventData.getTimestamp(), Optional.empty());
+                    }
+                    lastEntries.addLast(new BootLogEntry(eventData.getTimestamp(), macAddress, serverRequestEvent.getMachineUuid(),
+                            serverRequestEvent.getSelectedPattern()));
+                    while (lastEntries.size() > 100) {
+                        lastEntries.removeFirst();
                     }
                 } else if (event instanceof SetMachineUuidEvent) {
                     final String machineName = ((SetMachineUuidEvent) event).getMachineName();
@@ -354,6 +363,21 @@ public class DefaultStateService implements MachineService, PatternService, Stat
             final Optional<String> patternContent = selectedPattern.flatMap(p -> Optional.ofNullable(availablePatterns.get(p)));
             logService.appendEvent(new ServerRequestEvent(macAddress, uuid, selectedPattern, patternContent));
             return patternContent;
+        }
+    }
+
+    @Override
+    public Collection<BootLogEntry> readLastNEntries(final int maxEntryCount) {
+        synchronized (updateLock) {
+            if (lastEntries.size() > maxEntryCount) {
+                final LinkedList<BootLogEntry> ret = new LinkedList<>();
+                final Iterator<BootLogEntry> iterator = lastEntries.descendingIterator();
+                while (iterator.hasNext() && ret.size() < maxEntryCount) {
+                    ret.addFirst(iterator.next());
+                }
+                return ret;
+            }
+            return new ArrayList<>(lastEntries);
         }
     }
 
