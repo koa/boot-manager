@@ -22,9 +22,13 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import com.vaadin.contextmenu.GridContextMenu;
+import com.vaadin.contextmenu.GridContextMenu.GridContextMenuOpenListener.GridContextMenuOpenEvent;
+import com.vaadin.contextmenu.MenuItem;
 import com.vaadin.data.provider.DataProvider;
 import com.vaadin.data.provider.GridSortOrderBuilder;
 import com.vaadin.data.provider.ListDataProvider;
+import com.vaadin.icons.VaadinIcons;
 import com.vaadin.navigator.View;
 import com.vaadin.spring.annotation.SpringView;
 import com.vaadin.ui.Button;
@@ -53,6 +57,7 @@ import ch.bergturbenthal.infrastructure.event.UpdateMachinePatternEvent;
 import ch.bergturbenthal.infrastructure.model.MacAddress;
 import ch.bergturbenthal.infrastructure.service.LogService;
 import ch.bergturbenthal.infrastructure.service.MachineService;
+import ch.bergturbenthal.infrastructure.service.MachineService.BootConfigurationEntry;
 import ch.bergturbenthal.infrastructure.service.MachineService.ServerData;
 import ch.bergturbenthal.infrastructure.service.PatternService;
 import ch.bergturbenthal.infrastructure.service.StateService;
@@ -97,7 +102,52 @@ public class ServerOverview extends CustomComponent implements View {
                 .addColumn(s -> machineService.evaluateNextBootConfiguration(s.getName()).orElse("<default>"));
         nextConfigurationColumn.setCaption("next boot configuration");
         nextConfigurationColumn.setSortable(false);
+        final GridContextMenu<ServerData> contextMenu = new GridContextMenu<>(serverGrid);
+        contextMenu.addGridBodyContextMenuListener((final GridContextMenuOpenEvent<ServerData> event) -> {
+            contextMenu.removeItems();
+            final ServerData item = (ServerData) event.getItem();
+            if (item != null) {
+                serverGrid.select(item);
+                final MenuItem nextBootMenu = contextMenu.addItem("set next boot", null);
+                final MenuItem defaultBootMenu = contextMenu.addItem("set default boot", null);
+                Optional<UUID> exisingOnebootScope = Optional.empty();
+                Optional<String> existingOnebootConfiguration = Optional.empty();
+                Optional<UUID> exisingdefaultScope = Optional.empty();
+                Optional<String> existingDefaultConfiguration = Optional.empty();
+                for (final BootConfigurationEntry entry : item.getBootConfiguration()) {
+                    if (entry.getScope() instanceof OnebootPatternScope) {
+                        exisingOnebootScope = Optional.of(entry.getUuid());
+                        existingOnebootConfiguration = Optional.of(entry.getConfiguration());
+                    }
+                    if (entry.getScope() instanceof DefaultPatternScope) {
+                        exisingdefaultScope = Optional.of(entry.getUuid());
+                        existingDefaultConfiguration = Optional.of(entry.getConfiguration());
+                    }
+                }
+                final Optional<UUID> foundExistingOnebootScope = exisingOnebootScope;
+                final Optional<UUID> foundExistingDefaultScope = exisingdefaultScope;
+                final Set<String> availablePatterns = new TreeSet<>(patternService.listPatterns().keySet());
+                for (final String pattern : availablePatterns) {
+                    if (existingOnebootConfiguration.map(e -> e.equals(pattern)).orElse(Boolean.FALSE)) {
+                        nextBootMenu.addItem(pattern, VaadinIcons.CHECK, null);
+                    } else {
+                        nextBootMenu.addItem(pattern, selectEvent -> {
+                            final UUID id = foundExistingOnebootScope.orElse(UUID.randomUUID());
+                            logService.appendEvent(new UpdateMachinePatternEvent(id, item.getName(), pattern, new OnebootPatternScope()));
+                        });
+                    }
+                    if (existingDefaultConfiguration.map(e -> e.equals(pattern)).orElse(Boolean.FALSE)) {
+                        defaultBootMenu.addItem(pattern, VaadinIcons.CHECK, null);
+                    } else {
+                        defaultBootMenu.addItem(pattern, selectEvent -> {
+                            final UUID id = foundExistingDefaultScope.orElse(UUID.randomUUID());
+                            logService.appendEvent(new UpdateMachinePatternEvent(id, item.getName(), pattern, new DefaultPatternScope()));
+                        });
 
+                    }
+                }
+            }
+        });
         serverGrid.setSortOrder(new GridSortOrderBuilder<ServerData>().thenDesc(lastBootTimeColumn).build());
         final Button addServerButton = new Button("add Server");
 

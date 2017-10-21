@@ -175,6 +175,7 @@ public class DefaultStateService implements MachineService, PatternService, Stat
                     final Optional<MachineData> identifiedMachine = identifyMachine(machineUuid, macAddress);
                     if (identifiedMachine.isPresent()) {
                         final MachineData machine = identifiedMachine.get();
+                        machine.getKnownMacAddresses().add(macAddress);
                         final Optional<UUID> currentPattern = findCurrentPattern(machine);
                         knownMacAddressList.computeIfAbsent(macAddress, k -> new TreeMap<>()).put(eventData.getTimestamp(), currentPattern.map(id -> {
                             final String patternName = machine.getAssignedPatterns().get(id).getPatternName();
