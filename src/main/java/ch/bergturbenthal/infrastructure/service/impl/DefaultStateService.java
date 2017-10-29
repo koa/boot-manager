@@ -15,7 +15,6 @@ import java.util.Map.Entry;
 import java.util.Optional;
 import java.util.Set;
 import java.util.SortedMap;
-import java.util.SortedSet;
 import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.UUID;
@@ -76,9 +75,10 @@ public class DefaultStateService implements MachineService, PatternService, Stat
 
     @Value
     private static class RequestHistoryEntry {
-        private UUID   patternEntry;
-        private String patternName;
-        private String patternData;
+        private UUID       patternEntry;
+        private MacAddress macAddress;
+        private String     patternName;
+        private String     patternData;
     }
 
     private final Disposable                                                         logSubscription;
@@ -180,12 +180,12 @@ public class DefaultStateService implements MachineService, PatternService, Stat
                         knownMacAddressList.computeIfAbsent(macAddress, k -> new TreeMap<>()).put(eventData.getTimestamp(), currentPattern.map(id -> {
                             final String patternName = machine.getAssignedPatterns().get(id).getPatternName();
                             final String patternData = availablePatterns.get(patternName);
-                            return new RequestHistoryEntry(id, patternName, patternData);
+                            return new RequestHistoryEntry(id, macAddress, patternName, patternData);
                         }));
                         machine.getRequestHistory().put(eventData.getTimestamp(), currentPattern.map(id -> {
                             final String patternName = machine.getAssignedPatterns().get(id).getPatternName();
                             final String patternData = availablePatterns.get(patternName);
-                            return new RequestHistoryEntry(id, patternName, patternData);
+                            return new RequestHistoryEntry(id, macAddress, patternName, patternData);
                         }));
                         currentPattern.ifPresent(id -> {
                             final PatternEntry patternEntry = machine.getAssignedPatterns().get(id);
@@ -319,17 +319,15 @@ public class DefaultStateService implements MachineService, PatternService, Stat
                 builder.bootConfiguration(bootConfiguration);
                 final Collection<MacAddress> knownMacAddresses = machineData.getKnownMacAddresses();
                 builder.macs(new TreeSet<>(knownMacAddresses));
-                final SortedSet<Instant> bootTimes = new TreeSet<>();
-                for (final MacAddress macAddress : knownMacAddresses) {
-                    final SortedMap<Instant, Optional<RequestHistoryEntry>> macHistory = knownMacAddressList.get(macAddress);
-                    if (macHistory != null) {
-                        bootTimes.addAll(macHistory.keySet());
+                final List<BootLogEntry> bootHistory = new ArrayList<>();
+                for (final BootLogEntry historyEntry : lastEntries) {
+                    if (!knownMacAddresses.contains(historyEntry.getMacAddress())
+                            && !historyEntry.getUuid().flatMap(hu -> machineData.getMachineId().map(mu -> hu.equals(mu))).orElse(Boolean.FALSE)) {
+                        continue;
                     }
+                    bootHistory.add(historyEntry);
                 }
-                builder.lastBootTime(Optional.empty());
-                if (!bootTimes.isEmpty()) {
-                    builder.lastBootTime(Optional.of(bootTimes.last()));
-                }
+                builder.bootHistory(bootHistory);
                 return builder.build();
             }).collect(Collectors.toList());
         }

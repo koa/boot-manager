@@ -1,6 +1,5 @@
 package ch.bergturbenthal.infrastructure.service;
 
-import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -10,6 +9,7 @@ import java.util.UUID;
 
 import ch.bergturbenthal.infrastructure.event.PatternScope;
 import ch.bergturbenthal.infrastructure.model.MacAddress;
+import ch.bergturbenthal.infrastructure.service.BootLogService.BootLogEntry;
 import lombok.Builder;
 import lombok.Value;
 
@@ -27,7 +27,7 @@ public interface MachineService {
         private String                       name;
         private UUID                         uuid;
         private Collection<MacAddress>       macs;
-        private Optional<Instant>            lastBootTime;
+        private List<BootLogEntry>           bootHistory;
         private List<BootConfigurationEntry> bootConfiguration;
     }
 

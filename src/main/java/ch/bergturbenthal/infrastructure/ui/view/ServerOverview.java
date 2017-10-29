@@ -55,6 +55,7 @@ import ch.bergturbenthal.infrastructure.event.RenameMachineEvent;
 import ch.bergturbenthal.infrastructure.event.SetMachineUuidEvent;
 import ch.bergturbenthal.infrastructure.event.UpdateMachinePatternEvent;
 import ch.bergturbenthal.infrastructure.model.MacAddress;
+import ch.bergturbenthal.infrastructure.service.BootLogService.BootLogEntry;
 import ch.bergturbenthal.infrastructure.service.LogService;
 import ch.bergturbenthal.infrastructure.service.MachineService;
 import ch.bergturbenthal.infrastructure.service.MachineService.BootConfigurationEntry;
@@ -92,11 +93,19 @@ public class ServerOverview extends CustomComponent implements View {
         final AtomicReference<ZoneOffset> offset = new AtomicReference<ZoneOffset>(ZoneOffset.UTC);
         final AtomicReference<DateTimeFormatter> formatter = new AtomicReference<DateTimeFormatter>(
                 DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM));
-        final Column<ServerData, String> lastBootTimeColumn = serverGrid
-                .addColumn(source -> source.getLastBootTime().map(t -> t.atOffset(offset.get()).format(formatter.get())).orElse("<no data>"));
+        final Function<ServerData, Optional<BootLogEntry>> extractLastLogEntry = t -> {
+            final List<BootLogEntry> history = t.getBootHistory();
+            if (!history.isEmpty()) {
+                return Optional.of(history.get(history.size() - 1));
+            }
+            return Optional.empty();
+        };
+        final Column<ServerData, String> lastBootTimeColumn = serverGrid.addColumn(source -> extractLastLogEntry.apply(source)
+                .map(e -> e.getTimestamp()).map(t -> t.atOffset(offset.get()).format(formatter.get())).orElse("<no data>"));
         lastBootTimeColumn.setCaption("Last boot time");
-        lastBootTimeColumn.setComparator((o1, o2) -> Comparator.<Instant> nullsFirst(Comparator.naturalOrder())
-                .compare(o1.getLastBootTime().orElse(null), o2.getLastBootTime().orElse(null)));
+        lastBootTimeColumn.setComparator((o1, o2) -> Comparator.<Instant> nullsFirst(Comparator.naturalOrder()).compare(
+                extractLastLogEntry.apply(o1).map(e -> e.getTimestamp()).orElse(null),
+                extractLastLogEntry.apply(o2).map(e -> e.getTimestamp()).orElse(null)));
 
         final Column<ServerData, String> nextConfigurationColumn = serverGrid
                 .addColumn(s -> machineService.evaluateNextBootConfiguration(s.getName()).orElse("<default>"));
@@ -108,6 +117,49 @@ public class ServerOverview extends CustomComponent implements View {
             final ServerData item = (ServerData) event.getItem();
             if (item != null) {
                 serverGrid.select(item);
+                final String serverName = item.getName();
+
+                contextMenu.addItem("show log", showEvent -> {
+                    final Window window = new Window("log of " + serverName);
+                    final List<BootLogEntry> logCollection = new ArrayList<BootLogEntry>();
+                    final ListDataProvider<BootLogEntry> logDataProvider = DataProvider.ofCollection(logCollection);
+                    final Grid<BootLogEntry> logGrid = new Grid<>(logDataProvider);
+
+                    final Column<BootLogEntry, String> timestampColumn = logGrid
+                            .addColumn(e -> e.getTimestamp().atOffset(offset.get()).format(formatter.get()));
+                    timestampColumn.setCaption("Time");
+                    timestampColumn.setComparator((o1, o2) -> Comparator.comparing(BootLogEntry::getTimestamp).compare(o1, o2));
+
+                    final Column<BootLogEntry, String> macColumn = logGrid.addColumn(e -> e.getMacAddress().toString());
+                    macColumn.setCaption("Mac");
+
+                    final Column<BootLogEntry, String> idColumn = logGrid.addColumn(e -> e.getUuid().map(id -> id.toString()).orElse("<no id>"));
+                    idColumn.setCaption("uuid");
+
+                    final Column<BootLogEntry, String> configColumn = logGrid.addColumn(e -> e.getConfiguration().orElse("<no config>"));
+                    configColumn.setCaption("configuration");
+
+                    final Runnable refreshRunnable = () -> {
+                        final List<ServerData> listServers = machineService.listServers();
+                        for (final ServerData data : listServers) {
+                            if (serverName.equals(data.getName())) {
+                                logCollection.clear();
+                                logCollection.addAll(data.getBootHistory());
+                                logDataProvider.refreshAll();
+                            }
+                        }
+                    };
+                    refreshRunnable.run();
+                    final Disposable registration = stateService.registerForUpdates(() -> getUI().access(refreshRunnable));
+                    logGrid.setSizeFull();
+                    window.setContent(logGrid);
+                    window.addDetachListener(evdetachEvent -> registration.dispose());
+                    window.setWidth(60, Unit.EM);
+                    window.setHeight(60, Unit.PERCENTAGE);
+                    window.center();
+                    getUI().addWindow(window);
+                });
+
                 final MenuItem nextBootMenu = contextMenu.addItem("set next boot", null);
                 final MenuItem defaultBootMenu = contextMenu.addItem("set default boot", null);
                 Optional<UUID> exisingOnebootScope = Optional.empty();
