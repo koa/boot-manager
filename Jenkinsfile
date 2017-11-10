@@ -17,16 +17,19 @@ node {
    stage('Preparation') {
       mvnHome = tool 'Maven 3.5.2'
    }
-   stage('Update Dependencies'){
-        sh "'${mvnHome}/bin/mvn' -U versions:use-next-releases versions:use-releases"
-        sh "'${mvnHome}/bin/mvn' scm:checkin -Dmessage='resolved versions'"
+   configFileProvider(
+        [configFile(fileId: 'MyGlobalSettings', variable: 'MAVEN_SETTINGS')]) {
+	   stage('Update Dependencies'){
+	        sh "'${mvnHome}/bin/mvn' -U versions:use-next-releases versions:use-releases"
+	        sh "'${mvnHome}/bin/mvn' scm:checkin -Dmessage='resolved versions'"
+	   }
+	   stage('Build') {
+	     if(params.build=='release'){
+	       sh "'${mvnHome}/bin/mvn' -Dresume=false release:prepare release:perform"     
+	     }else if (params.build != 'update-dependencies'){
+	       sh "'${mvnHome}/bin/mvn' clean deploy -DperformRelease=true"
+	     }
    }
-   stage('Build') {
-     if(params.build=='release'){
-       sh "'${mvnHome}/bin/mvn' -Dresume=false release:prepare release:perform"     
-     }else if (params.build != 'update-dependencies'){
-       sh "'${mvnHome}/bin/mvn' clean deploy -DperformRelease=true"
-     }
    }
    stage('Results') {
       archive 'target/*.jar'
