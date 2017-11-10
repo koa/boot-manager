@@ -18,14 +18,14 @@ node {
    }
    configFileProvider([configFile(fileId: '83ccdf5b-6b19-4cd7-93b6-fdffb55cefa9', variable: 'MAVEN_SETTINGS')])  {
 	   stage('Update Dependencies'){
-	        sh "'${mvnHome}/bin/mvn' -U versions:use-next-releases versions:use-releases"
-	        sh "'${mvnHome}/bin/mvn' scm:checkin -Dmessage='resolved versions'"
+	        sh "'${mvnHome}/bin/mvn' -s $MAVEN_SETTINGS -U versions:use-next-releases versions:use-releases"
+	        sh "'${mvnHome}/bin/mvn' -s $MAVEN_SETTINGS scm:checkin -Dmessage='resolved versions'"
 	   }
 	   stage('Build') {
 	     if(params.build=='release'){
-	       sh "'${mvnHome}/bin/mvn' -Dresume=false release:prepare release:perform"     
+	       sh "'${mvnHome}/bin/mvn' -s $MAVEN_SETTINGS -Dresume=false release:prepare release:perform"     
 	     }else if (params.build != 'update-dependencies'){
-	       sh "'${mvnHome}/bin/mvn' clean deploy -DperformRelease=true"
+	       sh "'${mvnHome}/bin/mvn' -s $MAVEN_SETTINGS clean deploy -DperformRelease=true"
 	     }
    }
    }
