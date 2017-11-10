@@ -1,7 +1,6 @@
 #!/usr/bin/env groovy
 
 properties([
-  disableConcurrentBuilds(),
   buildDiscarder(logRotator(artifactDaysToKeepStr: '', artifactNumToKeepStr: '', daysToKeepStr: '1', numToKeepStr: '3')),
   parameters([
   	choice(defaultValue: "build", choices: ["build", "release", "update-dependencies"].join("\n"), description: '', name: 'build')
