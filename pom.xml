@@ -164,5 +164,17 @@
 		</pluginRepository>
 	</pluginRepositories>
 
-
+	<distributionManagement>
+		<repository>
+			<id>berg-releases</id>
+			<name>Releases Repository</name>
+			<url>http://nexus.berg-turbenthal.ch/repository/maven-releases/</url>
+		</repository>
+		<snapshotRepository>
+			<id>berg-snapshots</id>
+			<name>Snapshots Repository</name>
+			<url>http://nexus.berg-turbenthal.ch/repository/maven-snapshots</url>
+		</snapshotRepository>
+	</distributionManagement>
+	
 </project>

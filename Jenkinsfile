@@ -17,9 +17,6 @@ node {
       mvnHome = tool 'Maven 3.5.2'
    }
    configFileProvider([configFile(fileId: '83ccdf5b-6b19-4cd7-93b6-fdffb55cefa9', variable: 'MAVEN_SETTINGS')])  {
-	   stage('Update Dependencies'){
-	        sh "'${mvnHome}/bin/mvn' -s $MAVEN_SETTINGS -U versions:use-next-releases versions:use-releases"
-	   }
 	   stage('Build') {
 	     if(params.build=='release'){
 	       sh "'${mvnHome}/bin/mvn' -s $MAVEN_SETTINGS -Dresume=false release:prepare release:perform"     
