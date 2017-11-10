@@ -16,8 +16,7 @@ node {
    stage('Preparation') {
       mvnHome = tool 'Maven 3.5.2'
    }
-   configFileProvider(
-        [configFile(fileId: 'MyGlobalSettings', variable: 'MAVEN_SETTINGS')]) {
+   configFileProvider([configFile(fileId: '83ccdf5b-6b19-4cd7-93b6-fdffb55cefa9', variable: 'MAVEN_SETTINGS')])  {
 	   stage('Update Dependencies'){
 	        sh "'${mvnHome}/bin/mvn' -U versions:use-next-releases versions:use-releases"
 	        sh "'${mvnHome}/bin/mvn' scm:checkin -Dmessage='resolved versions'"
