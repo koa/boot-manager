@@ -21,7 +21,7 @@ node {
 	     if(params.build=='release'){
 	       sh "'${mvnHome}/bin/mvn' -s $MAVEN_SETTINGS -Dresume=false release:prepare release:perform"     
 	     }else if (params.build != 'update-dependencies'){
-	       sh "'${mvnHome}/bin/mvn' -s $MAVEN_SETTINGS clean deploy -DperformRelease=true"
+	       sh "'${mvnHome}/bin/mvn' -s $MAVEN_SETTINGS -e clean deploy -DperformRelease=true"
 	     }
    }
    }
