@@ -107,6 +107,10 @@ public class ServerOverview extends CustomComponent implements View {
                 extractLastLogEntry.apply(o1).map(e -> e.getTimestamp()).orElse(null),
                 extractLastLogEntry.apply(o2).map(e -> e.getTimestamp()).orElse(null)));
 
+        final Column<ServerData, String> lastConfigColumn = serverGrid.addColumn(
+                source -> extractLastLogEntry.apply(source).map(e -> e.getConfiguration().orElse("<no configuration>")).orElse("<no data>"));
+        lastConfigColumn.setCaption("last configuration");
+
         final Column<ServerData, String> nextConfigurationColumn = serverGrid
                 .addColumn(s -> machineService.evaluateNextBootConfiguration(s.getName()).orElse("<default>"));
         nextConfigurationColumn.setCaption("next boot configuration");
