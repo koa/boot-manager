@@ -6,6 +6,7 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.FormatStyle;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -20,7 +21,9 @@ import java.util.TreeSet;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
 
 import com.vaadin.contextmenu.GridContextMenu;
 import com.vaadin.contextmenu.GridContextMenu.GridContextMenuOpenListener.GridContextMenuOpenEvent;
@@ -44,6 +47,7 @@ import com.vaadin.ui.Window;
 import com.vaadin.ui.components.grid.Editor;
 
 import ch.bergturbenthal.infrastructure.event.AssignMacAddressToMachineEvent;
+import ch.bergturbenthal.infrastructure.event.BootAction;
 import ch.bergturbenthal.infrastructure.event.DefaultPatternScope;
 import ch.bergturbenthal.infrastructure.event.OnebootPatternScope;
 import ch.bergturbenthal.infrastructure.event.PatternScope;
@@ -55,12 +59,12 @@ import ch.bergturbenthal.infrastructure.event.RenameMachineEvent;
 import ch.bergturbenthal.infrastructure.event.SetMachineUuidEvent;
 import ch.bergturbenthal.infrastructure.event.UpdateMachinePatternEvent;
 import ch.bergturbenthal.infrastructure.model.MacAddress;
+import ch.bergturbenthal.infrastructure.service.ActionProcessor;
 import ch.bergturbenthal.infrastructure.service.BootLogService.BootLogEntry;
 import ch.bergturbenthal.infrastructure.service.LogService;
 import ch.bergturbenthal.infrastructure.service.MachineService;
 import ch.bergturbenthal.infrastructure.service.MachineService.BootConfigurationEntry;
 import ch.bergturbenthal.infrastructure.service.MachineService.ServerData;
-import ch.bergturbenthal.infrastructure.service.PatternService;
 import ch.bergturbenthal.infrastructure.service.StateService;
 import ch.bergturbenthal.infrastructure.ui.component.FreeMacSelector;
 import ch.bergturbenthal.infrastructure.ui.component.FreeUUIDSelector;
@@ -75,11 +79,15 @@ public class ServerOverview extends CustomComponent implements View {
     @Builder(toBuilder = true)
     private static class EditBootConfigurationEntry {
         private PatternScope scope;
-        private String       patternName;
+        private BootAction   bootAction;
     }
 
     public ServerOverview(final MachineService machineService, final StateService stateService, final LogService logService,
-            final PatternService patternService) {
+            final Collection<ActionProcessor> actionProcessors) {
+
+        final Supplier<Iterable<BootAction>> availablePatternsSupplier = () -> actionProcessors.stream()
+                .flatMap(p -> StreamSupport.stream(p.listAvailableActions().spliterator(), false)).collect(Collectors.toList());
+
         final List<ServerData> servers = new ArrayList<>();
         final ListDataProvider<ServerData> dataProvider = DataProvider.ofCollection(servers);
         final Grid<ServerData> serverGrid = new Grid<>("Servers", dataProvider);
@@ -107,12 +115,12 @@ public class ServerOverview extends CustomComponent implements View {
                 extractLastLogEntry.apply(o1).map(e -> e.getTimestamp()).orElse(null),
                 extractLastLogEntry.apply(o2).map(e -> e.getTimestamp()).orElse(null)));
 
-        final Column<ServerData, String> lastConfigColumn = serverGrid.addColumn(
-                source -> extractLastLogEntry.apply(source).map(e -> e.getConfiguration().orElse("<no configuration>")).orElse("<no data>"));
+        final Column<ServerData, String> lastConfigColumn = serverGrid.addColumn(source -> extractLastLogEntry.apply(source)
+                .map(e -> e.getConfiguration().map(v -> v.toString()).orElse("<no configuration>")).orElse("<no data>"));
         lastConfigColumn.setCaption("last configuration");
 
-        final Column<ServerData, String> nextConfigurationColumn = serverGrid
-                .addColumn(s -> machineService.evaluateNextBootConfiguration(s.getName()).orElse("<default>"));
+        final Column<ServerData, Optional<BootAction>> nextConfigurationColumn = serverGrid.addColumn(
+                s -> machineService.evaluateNextBootConfiguration(s.getName()), a -> a.map(v -> v.toString()).orElse("<no configuration>"));
         nextConfigurationColumn.setCaption("next boot configuration");
         nextConfigurationColumn.setSortable(false);
         final GridContextMenu<ServerData> contextMenu = new GridContextMenu<>(serverGrid);
@@ -140,7 +148,8 @@ public class ServerOverview extends CustomComponent implements View {
                     final Column<BootLogEntry, String> idColumn = logGrid.addColumn(e -> e.getUuid().map(id -> id.toString()).orElse("<no id>"));
                     idColumn.setCaption("uuid");
 
-                    final Column<BootLogEntry, String> configColumn = logGrid.addColumn(e -> e.getConfiguration().orElse("<no config>"));
+                    final Column<BootLogEntry, Optional<BootAction>> configColumn = logGrid.addColumn(e -> e.getConfiguration(),
+                            v -> v.map(e -> e.toString()).orElse("<no config>"));
                     configColumn.setCaption("configuration");
 
                     final Runnable refreshRunnable = () -> {
@@ -167,9 +176,9 @@ public class ServerOverview extends CustomComponent implements View {
                 final MenuItem nextBootMenu = contextMenu.addItem("set next boot", null);
                 final MenuItem defaultBootMenu = contextMenu.addItem("set default boot", null);
                 Optional<UUID> exisingOnebootScope = Optional.empty();
-                Optional<String> existingOnebootConfiguration = Optional.empty();
+                Optional<BootAction> existingOnebootConfiguration = Optional.empty();
                 Optional<UUID> exisingdefaultScope = Optional.empty();
-                Optional<String> existingDefaultConfiguration = Optional.empty();
+                Optional<BootAction> existingDefaultConfiguration = Optional.empty();
                 for (final BootConfigurationEntry entry : item.getBootConfiguration()) {
                     if (entry.getScope() instanceof OnebootPatternScope) {
                         exisingOnebootScope = Optional.of(entry.getUuid());
@@ -182,20 +191,19 @@ public class ServerOverview extends CustomComponent implements View {
                 }
                 final Optional<UUID> foundExistingOnebootScope = exisingOnebootScope;
                 final Optional<UUID> foundExistingDefaultScope = exisingdefaultScope;
-                final Set<String> availablePatterns = new TreeSet<>(patternService.listPatterns().keySet());
-                for (final String pattern : availablePatterns) {
+                for (final BootAction pattern : availablePatternsSupplier.get()) {
                     if (existingOnebootConfiguration.map(e -> e.equals(pattern)).orElse(Boolean.FALSE)) {
-                        nextBootMenu.addItem(pattern, VaadinIcons.CHECK, null);
+                        nextBootMenu.addItem(pattern.toString(), VaadinIcons.CHECK, null);
                     } else {
-                        nextBootMenu.addItem(pattern, selectEvent -> {
+                        nextBootMenu.addItem(pattern.toString(), selectEvent -> {
                             final UUID id = foundExistingOnebootScope.orElse(UUID.randomUUID());
                             logService.appendEvent(new UpdateMachinePatternEvent(id, item.getName(), pattern, new OnebootPatternScope()));
                         });
                     }
                     if (existingDefaultConfiguration.map(e -> e.equals(pattern)).orElse(Boolean.FALSE)) {
-                        defaultBootMenu.addItem(pattern, VaadinIcons.CHECK, null);
+                        defaultBootMenu.addItem(pattern.toString(), VaadinIcons.CHECK, null);
                     } else {
-                        defaultBootMenu.addItem(pattern, selectEvent -> {
+                        defaultBootMenu.addItem(pattern.toString(), selectEvent -> {
                             final UUID id = foundExistingDefaultScope.orElse(UUID.randomUUID());
                             logService.appendEvent(new UpdateMachinePatternEvent(id, item.getName(), pattern, new DefaultPatternScope()));
                         });
@@ -271,7 +279,7 @@ public class ServerOverview extends CustomComponent implements View {
 
             final Map<UUID, EditBootConfigurationEntry> bootConfigurationBeforeEdit = serverDataBeforeEdit.getBootConfiguration().stream()
                     .collect(Collectors.toMap(e -> e.getUuid(),
-                            e -> EditBootConfigurationEntry.builder().scope(e.getScope()).patternName(e.getConfiguration()).build()));
+                            e -> EditBootConfigurationEntry.builder().scope(e.getScope()).bootAction(e.getConfiguration()).build()));
             final HashMap<UUID, EditBootConfigurationEntry> currentBootConfiguration = new HashMap<>(bootConfigurationBeforeEdit);
             final Set<UUID> konfigurationsList = new TreeSet<UUID>(currentBootConfiguration.keySet());
             final ListDataProvider<UUID> configurationsProvider = DataProvider.ofCollection(konfigurationsList);
@@ -286,12 +294,16 @@ public class ServerOverview extends CustomComponent implements View {
                     .map(e -> e.toBuilder()).orElseGet(() -> EditBootConfigurationEntry.builder()).scope(fieldvalue).build()));
             scopeColumn.setEditable(true);
             scopeColumn.setCaption("Scope");
-            final Column<UUID, String> configurationColumn = bootConfigurationGrid
-                    .addColumn(id -> currentBootConfiguration.computeIfAbsent(id, defaultCreator).getPatternName());
-            final ComboBox<String> patternEditor = new ComboBox<>("pattern", new TreeSet<>(patternService.listPatterns().keySet()));
+            final Column<UUID, BootAction> configurationColumn = bootConfigurationGrid
+                    .addColumn(id -> currentBootConfiguration.computeIfAbsent(id, defaultCreator).getBootAction());
+            final List<BootAction> availablePatterns = new ArrayList<>();
+            for (final BootAction action : availablePatternsSupplier.get()) {
+                availablePatterns.add(action);
+            }
+            final ComboBox<BootAction> patternEditor = new ComboBox<>("pattern", availablePatterns);
             patternEditor.setEmptySelectionAllowed(false);
             configurationColumn.setEditorComponent(patternEditor, (bean, fieldvalue) -> currentBootConfiguration.compute(bean, (k, v) -> Optional
-                    .ofNullable(v).map(e -> e.toBuilder()).orElseGet(() -> EditBootConfigurationEntry.builder()).patternName(fieldvalue).build()));
+                    .ofNullable(v).map(e -> e.toBuilder()).orElseGet(() -> EditBootConfigurationEntry.builder()).bootAction(fieldvalue).build()));
             configurationColumn.setEditable(true);
             configurationColumn.setCaption("Pattern");
 
@@ -325,7 +337,7 @@ public class ServerOverview extends CustomComponent implements View {
                     final EditBootConfigurationEntry entryBefore = bootConfigurationBeforeEdit.remove(id);
                     final EditBootConfigurationEntry value = currentEntry.getValue();
                     if (!Objects.equals(entryBefore, value)) {
-                        final String patternName = value.getPatternName();
+                        final BootAction patternName = value.getBootAction();
                         final PatternScope scope = value.getScope();
                         if (scope != null && patternName != null) {
                             logService.appendEvent(new UpdateMachinePatternEvent(id, nameBefore, patternName, scope));

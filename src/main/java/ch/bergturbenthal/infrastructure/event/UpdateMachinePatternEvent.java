@@ -8,6 +8,6 @@ import lombok.Value;
 public class UpdateMachinePatternEvent implements Event {
     private UUID         patternId;
     private String       machineName;
-    private String       machinePattern;
+    private BootAction   bootAction;
     private PatternScope scope;
 }

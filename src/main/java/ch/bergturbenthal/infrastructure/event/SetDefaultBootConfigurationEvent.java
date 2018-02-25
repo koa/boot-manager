@@ -4,5 +4,5 @@ import lombok.Value;
 
 @Value
 public class SetDefaultBootConfigurationEvent implements Event {
-    private String configurationName;
+    private BootAction bootAction;
 }

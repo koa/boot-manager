@@ -45,7 +45,8 @@ public class BootLogViewer extends CustomComponent implements View {
         final Column<BootLogEntry, String> uuidColumn = logGrid.addColumn(e -> e.getUuid().map(u -> u.toString()).orElse("<no uuid>"));
         uuidColumn.setCaption("UUID");
 
-        final Column<BootLogEntry, String> configColumn = logGrid.addColumn(e -> e.getConfiguration().orElse("<no configuration>"));
+        final Column<BootLogEntry, String> configColumn = logGrid
+                .addColumn(e -> e.getConfiguration().map(e1 -> e1.toString()).orElse("<no configuration>"));
         configColumn.setCaption("Configuration");
 
         logGrid.setSizeFull();

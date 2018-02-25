@@ -7,6 +7,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
+import ch.bergturbenthal.infrastructure.event.BootAction;
 import ch.bergturbenthal.infrastructure.event.PatternScope;
 import ch.bergturbenthal.infrastructure.model.MacAddress;
 import ch.bergturbenthal.infrastructure.service.BootLogService.BootLogEntry;
@@ -18,7 +19,7 @@ public interface MachineService {
     static class BootConfigurationEntry {
         private UUID         uuid;
         private PatternScope scope;
-        private String       configuration;
+        private BootAction   configuration;
     }
 
     @Value
@@ -31,7 +32,7 @@ public interface MachineService {
         private List<BootConfigurationEntry> bootConfiguration;
     }
 
-    Optional<String> evaluateNextBootConfiguration(String machineName);
+    Optional<BootAction> evaluateNextBootConfiguration(String machineName);
 
     Set<MacAddress> listFreeMacs();
 
@@ -41,6 +42,6 @@ public interface MachineService {
 
     Collection<MacAddress> macsOfUUID(UUID uuid);
 
-    Optional<String> processBoot(Optional<UUID> uuid, MacAddress macAddress);
+    Optional<BootAction> processBoot(Optional<UUID> uuid, MacAddress macAddress);
 
 }

@@ -10,8 +10,7 @@ import lombok.Value;
 @Value
 public class ServerRequestEvent implements Event {
     @NonNull
-    private MacAddress       macAddress;
-    private Optional<UUID>   machineUuid;
-    private Optional<String> selectedPattern;
-    private Optional<String> selectedPatternContent;
+    private MacAddress           macAddress;
+    private Optional<UUID>       machineUuid;
+    private Optional<BootAction> selectedPattern;
 }

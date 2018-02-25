@@ -2,6 +2,9 @@ package ch.bergturbenthal.infrastructure.model;
 
 import java.util.regex.Pattern;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import lombok.Value;
 
 @Value
@@ -18,6 +21,12 @@ public class MacAddress implements Comparable<MacAddress> {
     }
 
     private long address;
+
+    @JsonCreator
+    public MacAddress(@JsonProperty("address") final long address) {
+        super();
+        this.address = address;
+    }
 
     @Override
     public int compareTo(final MacAddress o) {
