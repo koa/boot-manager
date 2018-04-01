@@ -9,6 +9,7 @@ import java.util.Map;
 
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
@@ -24,8 +25,9 @@ public class CoreosController {
         manager.addRedirectTarget("coreos/install");
     }
 
-    private Map<String, Object> createVariables() {
+    private Map<String, Object> createVariables(final String hostname) {
         final Map<String, Object> variables = new HashMap<>();
+        variables.put("hostname", hostname);
         final String uriString = ServletUriComponentsBuilder.fromCurrentContextPath().build().toUriString();
         variables.put("contextRoot", uriString);
         variables.put("baseUrl", "http://stable.release.core-os.net/amd64-usr/current");
@@ -42,23 +44,23 @@ public class CoreosController {
         return variables;
     }
 
-    @GetMapping("ignition-disk")
-    public ModelAndView ignitionDisk() {
-        return new ModelAndView("ignition-disk", createVariables());
+    @GetMapping("ignition-disk/{hostname}")
+    public ModelAndView ignitionDisk(@PathVariable("hostname") final String hostname) {
+        return new ModelAndView("ignition-disk", createVariables(hostname));
     }
 
-    @GetMapping("ignition-ram")
-    public ModelAndView ignitionRam() {
-        return new ModelAndView("ignition-ram", createVariables());
+    @GetMapping("ignition-ram/{hostname}")
+    public ModelAndView ignitionRam(@PathVariable("hostname") final String hostname) {
+        return new ModelAndView("ignition-ram", createVariables(hostname));
     }
 
-    @GetMapping("install")
-    public ModelAndView pxe() {
-        return new ModelAndView("install-coreos", createVariables());
+    @GetMapping("install/{hostname}")
+    public ModelAndView pxe(@PathVariable("hostname") final String hostname) {
+        return new ModelAndView("install-coreos", createVariables(hostname));
     }
 
-    @GetMapping("install-script")
-    public ModelAndView script() {
-        return new ModelAndView("install", createVariables());
+    @GetMapping("install-script/{hostname}")
+    public ModelAndView script(@PathVariable("hostname") final String hostname) {
+        return new ModelAndView("install", createVariables(hostname));
     }
 }

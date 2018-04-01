@@ -14,9 +14,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
-import ch.bergturbenthal.infrastructure.event.BootAction;
 import ch.bergturbenthal.infrastructure.event.PatternBootAction;
 import ch.bergturbenthal.infrastructure.event.RedirectBootAction;
+import ch.bergturbenthal.infrastructure.model.BootContext;
 import ch.bergturbenthal.infrastructure.model.MacAddress;
 import ch.bergturbenthal.infrastructure.service.ActionProcessor;
 import ch.bergturbenthal.infrastructure.service.MachineService;
@@ -34,9 +34,9 @@ public class BootController {
     @Autowired
     private Collection<ActionProcessor> knownActionProcessors;
 
-    private ResponseEntity<String> processBootAction(final BootAction action) {
+    private ResponseEntity<String> processBootAction(final BootContext action) {
         for (final ActionProcessor actionProcessor : knownActionProcessors) {
-            if (!actionProcessor.actionType().isInstance(action)) {
+            if (!actionProcessor.actionType().isInstance(action.getAction())) {
                 continue;
             }
             final Optional<ResponseEntity<String>> response = actionProcessor.processAction(action);
@@ -44,8 +44,8 @@ public class BootController {
                 return response.get();
             }
         }
-        if (action instanceof PatternBootAction) {
-            final PatternBootAction patternAction = (PatternBootAction) action;
+        if (action.getAction() instanceof PatternBootAction) {
+            final PatternBootAction patternAction = (PatternBootAction) action.getAction();
             final String patternData = patternService.listPatterns().get(patternAction.getPatternName());
             if (patternData == null) {
                 return ResponseEntity.notFound().build();
@@ -53,8 +53,8 @@ public class BootController {
                 return ResponseEntity.ok(patternData);
             }
         }
-        if (action instanceof RedirectBootAction) {
-            final String redirectTarget = ((RedirectBootAction) action).getRedirectTarget();
+        if (action.getAction() instanceof RedirectBootAction) {
+            final String redirectTarget = ((RedirectBootAction) action.getAction()).getRedirectTarget();
             final ServletUriComponentsBuilder contextPath = ServletUriComponentsBuilder.fromCurrentContextPath();
             final URI targetUri = contextPath.path(redirectTarget).build().toUri();
             return ResponseEntity.status(HttpStatus.FOUND).location(targetUri).build();

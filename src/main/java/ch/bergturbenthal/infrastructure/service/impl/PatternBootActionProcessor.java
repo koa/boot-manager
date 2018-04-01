@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 
 import ch.bergturbenthal.infrastructure.event.BootAction;
 import ch.bergturbenthal.infrastructure.event.PatternBootAction;
+import ch.bergturbenthal.infrastructure.model.BootContext;
 import ch.bergturbenthal.infrastructure.service.ActionProcessor;
 import ch.bergturbenthal.infrastructure.service.PatternService;
 
@@ -27,9 +28,9 @@ public class PatternBootActionProcessor implements ActionProcessor {
     }
 
     @Override
-    public Optional<ResponseEntity<String>> processAction(final BootAction action) {
-        if (action instanceof PatternBootAction) {
-            final String patternData = patternService.listPatterns().get(((PatternBootAction) action).getPatternName());
+    public Optional<ResponseEntity<String>> processAction(final BootContext action) {
+        if (action.getAction() instanceof PatternBootAction) {
+            final String patternData = patternService.listPatterns().get(((PatternBootAction) action.getAction()).getPatternName());
             if (patternData == null) {
                 return Optional.empty();
             } else {

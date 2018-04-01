@@ -18,10 +18,14 @@
 				"filesystem": "root",
 				"mode": 320,
 				"contents": {
-					"source": "{{contextRoot}}/coreos/install-script"
+					"source": "{{contextRoot}}/coreos/install-script/{{hostname}}"
 				}
-			}
-		]
+			},{
+	      "filesystem": "root",
+	      "path": "/etc/hostname",
+	      "mode": 420,
+	      "contents": { "source": "data:,{{hostname}}" }
+		}]
 	},
 	"passwd": {
 		"users": [

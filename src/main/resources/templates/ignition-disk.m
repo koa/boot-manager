@@ -17,7 +17,13 @@
 					]
 				}
 			}
-		]
+		],
+        "files": [{
+	      "filesystem": "root",
+	      "path": "/etc/hostname",
+	      "mode": 420,
+	      "contents": { "source": "data:,{{hostname}}" }
+	    }]		
 	},
 	"systemd": {
 		

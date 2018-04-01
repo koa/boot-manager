@@ -15,6 +15,8 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import ch.bergturbenthal.infrastructure.event.BootAction;
 import ch.bergturbenthal.infrastructure.event.RedirectBootAction;
+import ch.bergturbenthal.infrastructure.model.BootContext;
+import ch.bergturbenthal.infrastructure.model.BootContext.ContextData;
 import ch.bergturbenthal.infrastructure.service.ActionProcessor;
 import ch.bergturbenthal.infrastructure.service.RedirectTargetManager;
 
@@ -47,11 +49,13 @@ public class RerdirectBootActionProcessor implements ActionProcessor, RedirectTa
     }
 
     @Override
-    public Optional<ResponseEntity<String>> processAction(final BootAction action) {
-        if (action instanceof RedirectBootAction) {
-            final String redirectTarget = ((RedirectBootAction) action).getRedirectTarget();
+    public Optional<ResponseEntity<String>> processAction(final BootContext action) {
+        if (action.getAction() instanceof RedirectBootAction) {
+            final String redirectTarget = ((RedirectBootAction) action.getAction()).getRedirectTarget() + "/";
             final ServletUriComponentsBuilder contextPath = ServletUriComponentsBuilder.fromCurrentContextPath();
-            final URI targetUri = contextPath.path(redirectTarget).build().toUri();
+            final Optional<ContextData> context = action.getContext();
+            final URI targetUri = context.map(c -> contextPath.path(redirectTarget).path(c.getMachineName()).build().toUri())
+                    .orElse(contextPath.path(redirectTarget).build().toUri());
             return Optional.of(ResponseEntity.status(HttpStatus.FOUND).location(targetUri).build());
         } else {
             return Optional.empty();

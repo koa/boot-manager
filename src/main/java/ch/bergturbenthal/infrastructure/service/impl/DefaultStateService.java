@@ -44,6 +44,8 @@ import ch.bergturbenthal.infrastructure.event.SetDefaultBootConfigurationEvent;
 import ch.bergturbenthal.infrastructure.event.SetMachineUuidEvent;
 import ch.bergturbenthal.infrastructure.event.UpdateMachinePatternEvent;
 import ch.bergturbenthal.infrastructure.event.UpdatePatternEvent;
+import ch.bergturbenthal.infrastructure.model.BootContext;
+import ch.bergturbenthal.infrastructure.model.BootContext.ContextData;
 import ch.bergturbenthal.infrastructure.model.MacAddress;
 import ch.bergturbenthal.infrastructure.service.BootLogService;
 import ch.bergturbenthal.infrastructure.service.LogService;
@@ -184,9 +186,9 @@ public class DefaultStateService implements MachineService, PatternService, Stat
                     if (machineUuid.isPresent()) {
                         knownMachineUuidData.computeIfAbsent(machineUuid.get(), k -> new HashSet<>()).add(macAddress);
                     }
-                    final Optional<MachineData> identifiedMachine = identifyMachine(machineUuid, macAddress);
+                    final Optional<Entry<String, MachineData>> identifiedMachine = identifyMachine(machineUuid, macAddress);
                     if (identifiedMachine.isPresent()) {
-                        final MachineData machine = identifiedMachine.get();
+                        final MachineData machine = identifiedMachine.get().getValue();
                         machine.getKnownMacAddresses().add(macAddress);
                         final Optional<UUID> currentPattern = findCurrentPattern(machine);
                         knownMacAddressList.computeIfAbsent(macAddress, k -> new TreeMap<>()).put(eventData.getTimestamp(), currentPattern.map(id -> {
@@ -280,12 +282,12 @@ public class DefaultStateService implements MachineService, PatternService, Stat
         return defaultEntry;
     }
 
-    private Optional<MachineData> identifyMachine(final Optional<UUID> machineUuid, final MacAddress macAddress) {
+    private Optional<Entry<String, MachineData>> identifyMachine(final Optional<UUID> machineUuid, final MacAddress macAddress) {
         return Optional.ofNullable(Mono.justOrEmpty(machineUuid)
-                .flatMap(uuid -> Mono.justOrEmpty(
-                        knownNamedMachines.values().stream().filter(m -> m.getMachineId().isPresent() && m.getMachineId().equals(uuid)).findFirst()))
-                .switchIfEmpty(
-                        Mono.justOrEmpty(knownNamedMachines.values().stream().filter(m -> m.getKnownMacAddresses().contains(macAddress)).findFirst()))
+                .flatMap(uuid -> Mono.justOrEmpty(knownNamedMachines.entrySet().stream()
+                        .filter(m -> m.getValue().getMachineId().isPresent() && m.getValue().getMachineId().equals(uuid)).findFirst()))
+                .switchIfEmpty(Mono.justOrEmpty(
+                        knownNamedMachines.entrySet().stream().filter(m -> m.getValue().getKnownMacAddresses().contains(macAddress)).findFirst()))
                 .block());
     }
 
@@ -363,19 +365,22 @@ public class DefaultStateService implements MachineService, PatternService, Stat
 
     @Override
     @Transactional
-    public Optional<BootAction> processBoot(final Optional<UUID> uuid, final MacAddress macAddress) {
+    public Optional<BootContext> processBoot(final Optional<UUID> uuid, final MacAddress macAddress) {
         synchronized (updateLock) {
-            final Optional<BootAction> foundPattern = identifyMachine(uuid, macAddress).flatMap(machineData -> {
-                final Optional<UUID> currentPattern = findCurrentPattern(machineData);
-                return currentPattern.map(k -> machineData.getAssignedPatterns().get(k).getBootAction());
+            final Optional<BootContext> foundPattern = identifyMachine(uuid, macAddress).flatMap(machineData -> {
+                final MachineData value = machineData.getValue();
+                final String machineName = machineData.getKey();
+                final Optional<UUID> currentPattern = findCurrentPattern(value);
+                final Optional<ContextData> context = Optional.of(new ContextData(machineName));
+                return currentPattern.map(k -> new BootContext(value.getAssignedPatterns().get(k).getBootAction(), context));
             });
-            final Optional<BootAction> selectedPattern;
+            final Optional<BootContext> selectedPattern;
             if (foundPattern.isPresent()) {
                 selectedPattern = foundPattern;
             } else {
-                selectedPattern = defaultBootConfiguration;
+                selectedPattern = defaultBootConfiguration.map(a -> new BootContext(a, Optional.empty()));
             }
-            logService.appendEvent(new ServerRequestEvent(macAddress, uuid, selectedPattern));
+            logService.appendEvent(new ServerRequestEvent(macAddress, uuid, selectedPattern.map(c -> c.getAction())));
             return selectedPattern;
         }
     }

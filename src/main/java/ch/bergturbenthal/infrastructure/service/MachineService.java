@@ -9,6 +9,7 @@ import java.util.UUID;
 
 import ch.bergturbenthal.infrastructure.event.BootAction;
 import ch.bergturbenthal.infrastructure.event.PatternScope;
+import ch.bergturbenthal.infrastructure.model.BootContext;
 import ch.bergturbenthal.infrastructure.model.MacAddress;
 import ch.bergturbenthal.infrastructure.service.BootLogService.BootLogEntry;
 import lombok.Builder;
@@ -42,6 +43,6 @@ public interface MachineService {
 
     Collection<MacAddress> macsOfUUID(UUID uuid);
 
-    Optional<BootAction> processBoot(Optional<UUID> uuid, MacAddress macAddress);
+    Optional<BootContext> processBoot(Optional<UUID> uuid, MacAddress macAddress);
 
 }
