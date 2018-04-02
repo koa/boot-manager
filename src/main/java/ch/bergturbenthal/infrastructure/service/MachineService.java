@@ -31,9 +31,12 @@ public interface MachineService {
         private Collection<MacAddress>       macs;
         private List<BootLogEntry>           bootHistory;
         private List<BootConfigurationEntry> bootConfiguration;
+        private Map<String, String>          properties;
     }
 
     Optional<BootAction> evaluateNextBootConfiguration(String machineName);
+
+    Optional<ServerData> findServerByName(String serverName);
 
     Set<MacAddress> listFreeMacs();
 

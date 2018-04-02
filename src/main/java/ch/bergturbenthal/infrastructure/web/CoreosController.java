@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
+import ch.bergturbenthal.infrastructure.service.MachineService;
 import ch.bergturbenthal.infrastructure.service.RedirectTargetManager;
 import lombok.extern.slf4j.Slf4j;
 
@@ -21,13 +22,20 @@ import lombok.extern.slf4j.Slf4j;
 @Controller
 @RequestMapping("coreos")
 public class CoreosController {
-    public CoreosController(final RedirectTargetManager manager) {
+
+    private final MachineService machineService;
+
+    public CoreosController(final RedirectTargetManager manager, final MachineService machineService) {
+        this.machineService = machineService;
         manager.addRedirectTarget("coreos/install");
     }
 
     private Map<String, Object> createVariables(final String hostname) {
         final Map<String, Object> variables = new HashMap<>();
         variables.put("hostname", hostname);
+        machineService.findServerByName(hostname).ifPresent(serverData -> {
+            variables.putAll(serverData.getProperties());
+        });
         final String uriString = ServletUriComponentsBuilder.fromCurrentContextPath().build().toUriString();
         variables.put("contextRoot", uriString);
         variables.put("baseUrl", "http://stable.release.core-os.net/amd64-usr/current");

@@ -18,6 +18,7 @@ import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import javax.annotation.PreDestroy;
@@ -35,12 +36,14 @@ import ch.bergturbenthal.infrastructure.event.PatternScope;
 import ch.bergturbenthal.infrastructure.event.RemoveMacAddressFromMachineEvent;
 import ch.bergturbenthal.infrastructure.event.RemoveMachineEvent;
 import ch.bergturbenthal.infrastructure.event.RemoveMachinePatternEvent;
+import ch.bergturbenthal.infrastructure.event.RemoveMachinePropertyEvent;
 import ch.bergturbenthal.infrastructure.event.RemoveMachineUUIDEvent;
 import ch.bergturbenthal.infrastructure.event.RemovePatternEvent;
 import ch.bergturbenthal.infrastructure.event.RenameMachineEvent;
 import ch.bergturbenthal.infrastructure.event.RenamePatternEvent;
 import ch.bergturbenthal.infrastructure.event.ServerRequestEvent;
 import ch.bergturbenthal.infrastructure.event.SetDefaultBootConfigurationEvent;
+import ch.bergturbenthal.infrastructure.event.SetMachinePropertyEvent;
 import ch.bergturbenthal.infrastructure.event.SetMachineUuidEvent;
 import ch.bergturbenthal.infrastructure.event.UpdateMachinePatternEvent;
 import ch.bergturbenthal.infrastructure.event.UpdatePatternEvent;
@@ -55,9 +58,13 @@ import ch.bergturbenthal.infrastructure.service.StateService;
 import lombok.Builder;
 import lombok.Data;
 import lombok.Value;
+import lombok.extern.slf4j.Slf4j;
 import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
+import reactor.util.function.Tuple2;
+import reactor.util.function.Tuples;
 
+@Slf4j
 @Service
 public class DefaultStateService implements MachineService, PatternService, StateService, BootLogService {
 
@@ -68,6 +75,7 @@ public class DefaultStateService implements MachineService, PatternService, Stat
         private final Map<UUID, PatternEntry>                           assignedPatterns  = new HashMap<>();
         private final SortedMap<Instant, Optional<RequestHistoryEntry>> requestHistory    = new TreeMap<>();
         private Optional<UUID>                                          oneShotPattern    = Optional.empty();
+        private final Map<String, String>                               properties        = new HashMap<>();
     }
 
     @Value
@@ -95,6 +103,58 @@ public class DefaultStateService implements MachineService, PatternService, Stat
     private final Deque<BootLogEntry>                                                lastEntries              = new LinkedList<>();
     private Optional<BootAction>                                                     defaultBootConfiguration = Optional.empty();
     private final LogService                                                         logService;
+
+    final Function<? super Tuple2<String, MachineData>, ServerData>                  ENTRY_2_DATA_MAPPER      = machineEntry -> {
+                                                                                                                  final ServerData.ServerDataBuilder builder = ServerData
+                                                                                                                          .builder()
+                                                                                                                          .name(machineEntry.getT1());
+                                                                                                                  final MachineData machineData = machineEntry
+                                                                                                                          .getT2();
+                                                                                                                  machineData.getMachineId()
+                                                                                                                          .ifPresent(id -> builder
+                                                                                                                                  .uuid(id));
+                                                                                                                  final List<BootConfigurationEntry> bootConfiguration = new ArrayList<>();
+                                                                                                                  for (final Entry<UUID, PatternEntry> patternEntry : machineData
+                                                                                                                          .getAssignedPatterns()
+                                                                                                                          .entrySet()) {
+                                                                                                                      final PatternEntry value = patternEntry
+                                                                                                                              .getValue();
+                                                                                                                      bootConfiguration.add(
+                                                                                                                              new BootConfigurationEntry(
+                                                                                                                                      patternEntry
+                                                                                                                                              .getKey(),
+                                                                                                                                      value.getScope(),
+                                                                                                                                      value.getBootAction()));
+                                                                                                                  }
+                                                                                                                  builder.bootConfiguration(
+                                                                                                                          bootConfiguration);
+                                                                                                                  final Collection<MacAddress> knownMacAddresses = machineData
+                                                                                                                          .getKnownMacAddresses();
+                                                                                                                  builder.macs(new TreeSet<>(
+                                                                                                                          knownMacAddresses));
+                                                                                                                  final List<BootLogEntry> bootHistory = new ArrayList<>();
+                                                                                                                  for (final BootLogEntry historyEntry : lastEntries) {
+                                                                                                                      if (!knownMacAddresses
+                                                                                                                              .contains(historyEntry
+                                                                                                                                      .getMacAddress())
+                                                                                                                              && !historyEntry
+                                                                                                                                      .getUuid()
+                                                                                                                                      .flatMap(
+                                                                                                                                              hu -> machineData
+                                                                                                                                                      .getMachineId()
+                                                                                                                                                      .map(mu -> hu
+                                                                                                                                                              .equals(mu)))
+                                                                                                                                      .orElse(Boolean.FALSE)) {
+                                                                                                                          continue;
+                                                                                                                      }
+                                                                                                                      bootHistory.add(historyEntry);
+                                                                                                                  }
+                                                                                                                  builder.bootHistory(bootHistory);
+                                                                                                                  builder.properties(
+                                                                                                                          new HashMap<>(machineData
+                                                                                                                                  .getProperties()));
+                                                                                                                  return builder.build();
+                                                                                                              };
 
     public DefaultStateService(final LogService logService) {
         this.logService = logService;
@@ -249,6 +309,20 @@ public class DefaultStateService implements MachineService, PatternService, Stat
                     } else {
                         defaultBootConfiguration = Optional.of(configurationName);
                     }
+                } else if (event instanceof SetMachinePropertyEvent) {
+                    final SetMachinePropertyEvent setMachinePropertyEvent = (SetMachinePropertyEvent) event;
+                    final String machineName = setMachinePropertyEvent.getMachineName();
+                    final MachineData machineData = knownNamedMachines.computeIfAbsent(machineName, k -> new MachineData());
+                    machineData.getProperties().put(setMachinePropertyEvent.getProperty(), setMachinePropertyEvent.getValue());
+                    log.info("Event: " + setMachinePropertyEvent + " -> " + machineData.getProperties());
+                } else if (event instanceof RemoveMachinePropertyEvent) {
+                    final RemoveMachinePropertyEvent setMachinePropertyEvent = (RemoveMachinePropertyEvent) event;
+                    final String machineName = setMachinePropertyEvent.getMachineName();
+                    final MachineData machineData = knownNamedMachines.get(machineName);
+                    if (machineData != null) {
+                        machineData.getProperties().remove(setMachinePropertyEvent.getProperty());
+                    }
+                    log.info("Event: " + setMachinePropertyEvent + " -> " + machineData.getProperties());
                 }
             }
             synchronized (pendingListeners) {
@@ -280,6 +354,13 @@ public class DefaultStateService implements MachineService, PatternService, Stat
             }
         }
         return defaultEntry;
+    }
+
+    @Override
+    public Optional<ServerData> findServerByName(final String serverName) {
+        synchronized (updateLock) {
+            return Optional.ofNullable(knownNamedMachines.get(serverName)).map(e -> Tuples.of(serverName, e)).map(ENTRY_2_DATA_MAPPER);
+        }
     }
 
     private Optional<Entry<String, MachineData>> identifyMachine(final Optional<UUID> machineUuid, final MacAddress macAddress) {
@@ -325,29 +406,8 @@ public class DefaultStateService implements MachineService, PatternService, Stat
     @Override
     public List<ServerData> listServers() {
         synchronized (updateLock) {
-            return knownNamedMachines.entrySet().stream().map(machineEntry -> {
-                final ServerData.ServerDataBuilder builder = ServerData.builder().name(machineEntry.getKey());
-                final MachineData machineData = machineEntry.getValue();
-                machineData.getMachineId().ifPresent(id -> builder.uuid(id));
-                final List<BootConfigurationEntry> bootConfiguration = new ArrayList<>();
-                for (final Entry<UUID, PatternEntry> patternEntry : machineData.getAssignedPatterns().entrySet()) {
-                    final PatternEntry value = patternEntry.getValue();
-                    bootConfiguration.add(new BootConfigurationEntry(patternEntry.getKey(), value.getScope(), value.getBootAction()));
-                }
-                builder.bootConfiguration(bootConfiguration);
-                final Collection<MacAddress> knownMacAddresses = machineData.getKnownMacAddresses();
-                builder.macs(new TreeSet<>(knownMacAddresses));
-                final List<BootLogEntry> bootHistory = new ArrayList<>();
-                for (final BootLogEntry historyEntry : lastEntries) {
-                    if (!knownMacAddresses.contains(historyEntry.getMacAddress())
-                            && !historyEntry.getUuid().flatMap(hu -> machineData.getMachineId().map(mu -> hu.equals(mu))).orElse(Boolean.FALSE)) {
-                        continue;
-                    }
-                    bootHistory.add(historyEntry);
-                }
-                builder.bootHistory(bootHistory);
-                return builder.build();
-            }).collect(Collectors.toList());
+            return knownNamedMachines.entrySet().stream().map(e -> Tuples.of(e.getKey(), e.getValue())).map(ENTRY_2_DATA_MAPPER)
+                    .collect(Collectors.toList());
         }
     }
 

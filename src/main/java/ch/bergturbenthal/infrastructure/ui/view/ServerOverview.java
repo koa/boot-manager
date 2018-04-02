@@ -17,6 +17,7 @@ import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
@@ -24,6 +25,8 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
+
+import org.springframework.util.StringUtils;
 
 import com.vaadin.contextmenu.GridContextMenu;
 import com.vaadin.contextmenu.GridContextMenu.GridContextMenuOpenListener.GridContextMenuOpenEvent;
@@ -54,8 +57,10 @@ import ch.bergturbenthal.infrastructure.event.PatternScope;
 import ch.bergturbenthal.infrastructure.event.RemoveMacAddressFromMachineEvent;
 import ch.bergturbenthal.infrastructure.event.RemoveMachineEvent;
 import ch.bergturbenthal.infrastructure.event.RemoveMachinePatternEvent;
+import ch.bergturbenthal.infrastructure.event.RemoveMachinePropertyEvent;
 import ch.bergturbenthal.infrastructure.event.RemoveMachineUUIDEvent;
 import ch.bergturbenthal.infrastructure.event.RenameMachineEvent;
+import ch.bergturbenthal.infrastructure.event.SetMachinePropertyEvent;
 import ch.bergturbenthal.infrastructure.event.SetMachineUuidEvent;
 import ch.bergturbenthal.infrastructure.event.UpdateMachinePatternEvent;
 import ch.bergturbenthal.infrastructure.model.MacAddress;
@@ -123,6 +128,8 @@ public class ServerOverview extends CustomComponent implements View {
                 s -> machineService.evaluateNextBootConfiguration(s.getName()), a -> a.map(v -> v.toString()).orElse("<no configuration>"));
         nextConfigurationColumn.setCaption("next boot configuration");
         nextConfigurationColumn.setSortable(false);
+        final Column<ServerData, String> propertiesColumn = serverGrid.addColumn(s -> s.getProperties().toString());
+        propertiesColumn.setCaption("Properties");
         final GridContextMenu<ServerData> contextMenu = new GridContextMenu<>(serverGrid);
         contextMenu.addGridBodyContextMenuListener((final GridContextMenuOpenEvent<ServerData> event) -> {
             contextMenu.removeItems();
@@ -156,9 +163,11 @@ public class ServerOverview extends CustomComponent implements View {
                         final List<ServerData> listServers = machineService.listServers();
                         for (final ServerData data : listServers) {
                             if (serverName.equals(data.getName())) {
-                                logCollection.clear();
-                                logCollection.addAll(data.getBootHistory());
-                                logDataProvider.refreshAll();
+                                getUI().access(() -> {
+                                    logCollection.clear();
+                                    logCollection.addAll(data.getBootHistory());
+                                    logDataProvider.refreshAll();
+                                });
                             }
                         }
                     };
@@ -166,6 +175,83 @@ public class ServerOverview extends CustomComponent implements View {
                     final Disposable registration = stateService.registerForUpdates(() -> getUI().access(refreshRunnable));
                     logGrid.setSizeFull();
                     window.setContent(logGrid);
+                    window.addDetachListener(evdetachEvent -> registration.dispose());
+                    window.setWidth(60, Unit.EM);
+                    window.setHeight(60, Unit.PERCENTAGE);
+                    window.center();
+                    getUI().addWindow(window);
+                });
+                contextMenu.addItem("properties", showEvent -> {
+                    final Window window = new Window("properties of " + serverName);
+                    final TreeMap<String, String> properties = new TreeMap<>();
+                    final ListDataProvider<Entry<String, String>> propertiesDataProvider = DataProvider.ofCollection(properties.entrySet());
+                    final Grid<Entry<String, String>> propertiesGrid = new Grid<>(propertiesDataProvider);
+                    final Column<Entry<String, String>, String> keyColumn = propertiesGrid.addColumn(e -> e.getKey());
+                    keyColumn.setCaption("Key");
+                    final Column<Entry<String, String>, String> valueColumn = propertiesGrid.addColumn(e -> e.getValue());
+                    valueColumn.setCaption("Value");
+
+                    final Editor<Entry<String, String>> editor = propertiesGrid.getEditor();
+                    editor.setEnabled(true);
+                    editor.setBuffered(true);
+                    final AtomicReference<String> keyReference = new AtomicReference<>(null);
+                    final AtomicReference<String> valueReference = new AtomicReference<>(null);
+                    editor.addOpenListener(openEvent -> {
+                        final Entry<String, String> beforeBean = openEvent.getBean();
+                        keyReference.set(beforeBean.getKey());
+                        valueReference.set(beforeBean.getValue());
+                    });
+                    keyColumn.setEditorComponent(new TextField(), (bean, fieldvalue) -> {
+                        keyReference.set(fieldvalue);
+                    });
+                    valueColumn.setEditorComponent(new TextField(), (bean, fieldvalue) -> {
+                        valueReference.set(fieldvalue);
+                    });
+                    editor.addSaveListener(saveEvent -> {
+                        final String beforeKey = saveEvent.getBean().getKey();
+                        final String beforeValue = saveEvent.getBean().getValue();
+                        final String afterKey = keyReference.get();
+                        final String afterValue = valueReference.get();
+                        if (StringUtils.isEmpty(afterKey) || StringUtils.isEmpty(afterValue)) {
+                            logService.appendEvent(new RemoveMachinePropertyEvent(serverName, beforeKey));
+                            return;
+                        }
+                        if (!beforeKey.equals(afterKey)) {
+                            logService.appendEvent(new RemoveMachinePropertyEvent(serverName, beforeKey));
+                        } else if (beforeValue.equals(afterValue)) {
+                            return;
+                        }
+                        logService.appendEvent(new SetMachinePropertyEvent(serverName, afterKey, afterValue));
+                    });
+
+                    final Runnable refreshRunnable = () -> {
+                        final List<ServerData> listServers = machineService.listServers();
+                        for (final ServerData data : listServers) {
+                            if (serverName.equals(data.getName())) {
+                                properties.clear();
+                                properties.putAll(data.getProperties());
+                                propertiesDataProvider.refreshAll();
+                            }
+                        }
+                    };
+                    refreshRunnable.run();
+                    final Disposable registration = stateService.registerForUpdates(() -> getUI().access(refreshRunnable));
+                    propertiesGrid.setSizeFull();
+                    final VerticalLayout verticalLayout = new VerticalLayout();
+                    verticalLayout.addComponent(propertiesGrid);
+                    verticalLayout.setExpandRatio(propertiesGrid, 1);
+                    verticalLayout.setSizeFull();
+                    final Button addButton = new Button("add", clickEvent -> {
+                        for (int i = 0; true; i++) {
+                            final String keyName = "key" + (i == 0 ? "" : Integer.toString(i));
+                            if (!properties.containsKey(keyName)) {
+                                logService.appendEvent(new SetMachinePropertyEvent(serverName, keyName, "value"));
+                                break;
+                            }
+                        }
+                    });
+                    verticalLayout.addComponent(addButton);
+                    window.setContent(verticalLayout);
                     window.addDetachListener(evdetachEvent -> registration.dispose());
                     window.setWidth(60, Unit.EM);
                     window.setHeight(60, Unit.PERCENTAGE);
@@ -210,6 +296,7 @@ public class ServerOverview extends CustomComponent implements View {
 
                     }
                 }
+
             }
         });
         serverGrid.setSortOrder(new GridSortOrderBuilder<ServerData>().thenDesc(lastBootTimeColumn).build());
