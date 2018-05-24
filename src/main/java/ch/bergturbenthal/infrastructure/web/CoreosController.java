@@ -35,6 +35,7 @@ public class CoreosController {
         variables.put("hostname", hostname);
         machineService.findServerByName(hostname).ifPresent(serverData -> {
             variables.putAll(serverData.getProperties());
+            serverData.getMacs().stream().sorted().map(m -> m.toString()).findFirst().ifPresent(mac -> variables.put("mac", mac));
         });
         final String uriString = ServletUriComponentsBuilder.fromCurrentContextPath().build().toUriString();
         variables.put("contextRoot", uriString);
