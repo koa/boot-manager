@@ -6,6 +6,7 @@ import java.io.FileReader;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -39,15 +40,22 @@ public class CoreosController {
         });
         final String uriString = ServletUriComponentsBuilder.fromCurrentContextPath().build().toUriString();
         variables.put("contextRoot", uriString);
-        variables.put("baseUrl", "http://stable.release.core-os.net/amd64-usr/current");
+        final String baseUrl = Optional.ofNullable(System.getenv("BASE_URL")).orElse("http://stable.release.core-os.net/amd64-usr");
+        variables.put("baseUrl", baseUrl);
         final File sshDir = new File(new File(System.getProperty("user.home")), ".ssh");
-        final File rsaKey = new File(sshDir, "id_rsa.pub");
-        if (rsaKey.exists()) {
-            try (BufferedReader reader = new BufferedReader(new FileReader(rsaKey))) {
-                final String key = reader.readLine();
-                variables.put("sshKey", key);
-            } catch (final IOException ex) {
-                log.error("Cannot read public ssh key", ex);
+        final String sshKey = System.getenv("SSH_KEY");
+        log.info("SSH-Key: " + sshKey);
+        if (sshKey != null) {
+            variables.put("sshKey", sshKey);
+        } else {
+            final File rsaKey = new File(sshDir, "id_rsa.pub");
+            if (rsaKey.exists()) {
+                try (BufferedReader reader = new BufferedReader(new FileReader(rsaKey))) {
+                    final String key = reader.readLine();
+                    variables.put("sshKey", key);
+                } catch (final IOException ex) {
+                    log.error("Cannot read public ssh key", ex);
+                }
             }
         }
         return variables;
