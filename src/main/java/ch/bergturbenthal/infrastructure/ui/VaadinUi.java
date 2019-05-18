@@ -1,27 +1,21 @@
 package ch.bergturbenthal.infrastructure.ui;
 
-import org.springframework.beans.factory.annotation.Autowired;
-
 import com.vaadin.annotations.Push;
-import com.vaadin.annotations.Theme;
 import com.vaadin.annotations.Widgetset;
-import com.vaadin.server.VaadinRequest;
-import com.vaadin.spring.annotation.SpringUI;
-import com.vaadin.spring.navigator.SpringNavigator;
-import com.vaadin.ui.UI;
+import com.vaadin.flow.component.html.Div;
+import com.vaadin.flow.router.Route;
+import com.vaadin.flow.router.RouterLayout;
+import com.vaadin.mpr.core.HasLegacyComponents;
 
-@SpringUI
-@Theme("valo")
+import javax.annotation.PostConstruct;
+
+@Route
 @Push
 @Widgetset("ch.bergturbenthal.infrastructure.BootManagerWidgetSet")
-public class VaadinUi extends UI {
-    @Autowired
-    private SpringNavigator springNavigator;
+public class VaadinUi extends Div implements HasLegacyComponents, RouterLayout {
 
-    @Override
-    protected void init(final VaadinRequest vaadinRequest) {
-        springNavigator.init(this, this);
-        setNavigator(springNavigator);
-        // ...
-    }
+  @PostConstruct
+  protected void buildLayouts() {
+
+  }
 }

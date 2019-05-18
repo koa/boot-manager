@@ -5,7 +5,7 @@
 
     <groupId>ch.bergturbenthal.infrastructure</groupId>
     <artifactId>boot-manager</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
+    <version>0.1.0-SNAPSHOT</version>
     <packaging>jar</packaging>
 
     <name>boot-manager</name>
@@ -21,8 +21,8 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <java.version>1.8</java.version>
-        <vaadin.version>8.3.1</vaadin.version>
-        <vaadin.plugin.version>${vaadin.version}</vaadin.plugin.version>
+        <vaadin.version>10.0.14</vaadin.version>
+        <vaadin.plugin.version>10.0.14</vaadin.plugin.version>
         <maven-surefire-plugin.version>2.18.1</maven-surefire-plugin.version>
     </properties>
 
@@ -38,6 +38,7 @@
         <dependency>
             <groupId>com.vaadin</groupId>
             <artifactId>vaadin-spring-boot-starter</artifactId>
+            <version>10.0.3</version>
         </dependency>
 
         <dependency>
@@ -66,11 +67,8 @@
         </dependency>
         <dependency>
             <groupId>com.vaadin</groupId>
-            <artifactId>vaadin-push</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.vaadin</groupId>
-            <artifactId>vaadin-context-menu</artifactId>
+            <artifactId>vaadin-context-menu-flow</artifactId>
+            <version>2.1.0</version>
         </dependency>
         <dependency>
             <groupId>javax.interceptor</groupId>
@@ -106,13 +104,6 @@
                 <artifactId>vaadin-maven-plugin</artifactId>
                 <version>${vaadin.plugin.version}</version>
                 <configuration>
-                    <extraJvmArgs>-Xmx512M -Xss1024k</extraJvmArgs>
-                    <!-- <webappDirectory>${basedir}/src/main/webapp/VAADIN/widgetsets</webappDirectory>
-                      <hostedWebapp>${basedir}/src/main/webapp/VAADIN/widgetsets</hostedWebapp>
-                      <noServer>true</noServer> <persistentunitcachedir>${basedir}/target/tmp/gwt-unitCache</persistentunitcachedir> -->
-                    <compileReport>true</compileReport>
-                    <strict>true</strict>
-                    <!-- <runTarget>http://localhost:8080/context-menu</runTarget> -->
                 </configuration>
                 <executions>
                     <!-- You are free to mark this as permanently ignored in Eclipse -->
@@ -122,9 +113,7 @@
                               them -->
                         </configuration>
                         <goals>
-                            <goal>resources</goal>
-                            <!-- <goal>update-widgetset</goal> -->
-                            <goal>compile</goal>
+                            <goal>package-for-production</goal>
                         </goals>
                     </execution>
                 </executions>
