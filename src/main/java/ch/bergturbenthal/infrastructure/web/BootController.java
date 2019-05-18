@@ -1,10 +1,12 @@
 package ch.bergturbenthal.infrastructure.web;
 
-import java.net.URI;
-import java.util.Collection;
-import java.util.Optional;
-import java.util.UUID;
-
+import ch.bergturbenthal.infrastructure.event.PatternBootAction;
+import ch.bergturbenthal.infrastructure.event.RedirectBootAction;
+import ch.bergturbenthal.infrastructure.model.BootContext;
+import ch.bergturbenthal.infrastructure.model.MacAddress;
+import ch.bergturbenthal.infrastructure.service.ActionProcessor;
+import ch.bergturbenthal.infrastructure.service.MachineService;
+import ch.bergturbenthal.infrastructure.service.PatternService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -14,13 +16,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
-import ch.bergturbenthal.infrastructure.event.PatternBootAction;
-import ch.bergturbenthal.infrastructure.event.RedirectBootAction;
-import ch.bergturbenthal.infrastructure.model.BootContext;
-import ch.bergturbenthal.infrastructure.model.MacAddress;
-import ch.bergturbenthal.infrastructure.service.ActionProcessor;
-import ch.bergturbenthal.infrastructure.service.MachineService;
-import ch.bergturbenthal.infrastructure.service.PatternService;
+import java.net.URI;
+import java.util.Collection;
+import java.util.Optional;
+import java.util.UUID;
 
 @RestController()
 public class BootController {
@@ -73,7 +72,7 @@ public class BootController {
 
     @GetMapping("/pattern/{filename:.*}")
     public ResponseEntity<String> readPattern(@PathVariable("filename") final String filename) {
-        return Optional.ofNullable(patternService.listPatterns().get(filename)).map(body -> ResponseEntity.ok(body))
+        return Optional.ofNullable(patternService.listPatterns().get(filename)).map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 }

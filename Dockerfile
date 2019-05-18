@@ -12,7 +12,7 @@ RUN mvn clean install
 RUN mkdir -p /app
 RUN mv target/boot-manager*.jar /app/boot-manager.jar
 
-FROM distroless/java:1034974eb63a
+FROM distroless/java:11
 COPY --from=build-env /app /app
 WORKDIR /app
 VOLUME /data
